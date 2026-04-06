@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { SiteManifest, TerrainLodManifest, TerrainLevelManifest, TerrainTileManifest } from '../types';
-import { loadColorTexture, loadTileHeights } from './terrainLoader';
+import { loadColorTexture, loadRepeatingColorTexture, loadTileHeights } from './terrainLoader';
 
 interface TileState {
   tile: TerrainTileManifest;
@@ -36,6 +36,15 @@ export class TerrainSystem {
     const lowTexture = await loadColorTexture(this.manifest.textureLow);
     this.material.map = lowTexture;
     this.material.needsUpdate = true;
+
+    if (this.manifest.detailOverlay) {
+      const detailTexture = await loadRepeatingColorTexture(this.manifest.detailOverlay.texture);
+      this.installDetailOverlay(
+        detailTexture,
+        this.manifest.detailOverlay.repeat,
+        this.manifest.detailOverlay.strength,
+      );
+    }
 
     await Promise.all(
       this.manifest.tiles.map(async (tile) => {
@@ -132,6 +141,32 @@ export class TerrainSystem {
     this.material.map = texture;
     this.material.needsUpdate = true;
     this.detailTextureLoaded = true;
+  }
+
+  private installDetailOverlay(texture: THREE.Texture, repeat: number, strength: number): void {
+    this.material.onBeforeCompile = (shader) => {
+      shader.uniforms.detailMap = { value: texture };
+      shader.uniforms.detailRepeat = { value: repeat };
+      shader.uniforms.detailStrength = { value: strength };
+
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <map_pars_fragment>',
+          `#include <map_pars_fragment>
+uniform sampler2D detailMap;
+uniform float detailRepeat;
+uniform float detailStrength;`,
+        )
+        .replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+vec3 detailSample = texture2D(detailMap, vMapUv * detailRepeat).rgb;
+float detailLuma = dot(detailSample, vec3(0.299, 0.587, 0.114));
+float detailContrast = mix(0.7, 1.35, detailLuma);
+diffuseColor.rgb *= mix(vec3(1.0), vec3(detailContrast), detailStrength);`,
+        );
+    };
+    this.material.needsUpdate = true;
   }
 
   private ensureDetailTile(tile: TerrainTileManifest): void {

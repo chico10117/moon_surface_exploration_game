@@ -1,5 +1,5 @@
-import { createWriteStream } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { fromFile } from 'geotiff';
@@ -8,12 +8,17 @@ import { PNG } from 'pngjs';
 const ROOT = process.cwd();
 const CACHE_DIR = path.join(ROOT, '.cache', 'lunar-source');
 const OUTPUT_DIR = path.join(ROOT, 'public', 'data', 'tycho');
-const SOURCE_URL =
-  'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_64_uint.tif';
-const SOURCE_FILE = path.join(CACHE_DIR, 'ldem_64_uint.tif');
+const PDS_JP2_URL =
+  'https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/jp2/ldem_64.jp2';
+const PDS_JP2_FILE = path.join(CACHE_DIR, 'ldem_64.jp2');
+const PDS_CROP_CACHE_FILE = path.join(CACHE_DIR, 'ldem_64_tycho_crop.f32');
+const PDS_CHUNK_FILE = path.join(CACHE_DIR, 'ldem_64_chunk.tif');
+const PDS_CROP_CHUNK_SAMPLES = 128;
+const PDS_WIDTH_SAMPLES = 23040;
+const PDS_HEIGHT_SAMPLES = 11520;
+const PDS_TIFF_SIGN_BIAS = 32768;
+const PDS_HEIGHT_SCALING = 0.5;
 const MOON_RADIUS_METERS = 1_737_400;
-const SOURCE_OFFSET = 20_000;
-const SOURCE_SCALE = 0.5;
 
 const SITE = {
   id: 'tycho',
@@ -80,9 +85,11 @@ const lowTexture = makeShadedTexture(
   world.widthMeters / (lowHeights.width - 1),
   world.heightMeters / (lowHeights.height - 1),
 );
+const detailTexture = makeDetailTexture(512);
 
 await writePng(path.join(OUTPUT_DIR, 'relief-high.png'), highTexture);
 await writePng(path.join(OUTPUT_DIR, 'relief-low.png'), lowTexture);
+await writePng(path.join(OUTPUT_DIR, 'detail-albedo.png'), detailTexture);
 
 const tileManifest = buildTileManifest();
 await writeTiles(
@@ -131,7 +138,7 @@ const siteManifest = {
   },
   grid: SITE.grid,
   spawn: withHeight(
-    { lon: -13.85, lat: -41.48, headingDegrees: 108 },
+    { lon: SITE.center.lon, lat: SITE.center.lat, headingDegrees: 108 },
     decodedHeights,
     width,
     height,
@@ -147,6 +154,11 @@ const siteManifest = {
 const terrainManifest = {
   textureLow: '/data/tycho/relief-low.png',
   textureHigh: '/data/tycho/relief-high.png',
+  detailOverlay: {
+    texture: '/data/tycho/detail-albedo.png',
+    repeat: 54,
+    strength: 0.68,
+  },
   levels: [
     { id: 'boot', samplesX: SITE.bootSamplesPerTile.x, samplesZ: SITE.bootSamplesPerTile.z },
     { id: 'detail', samplesX: SITE.detailSamplesPerTile.x, samplesZ: SITE.detailSamplesPerTile.z },
@@ -226,17 +238,17 @@ console.log(`Baked Tycho corridor to ${OUTPUT_DIR}`);
 
 async function loadOrGenerateSource() {
   try {
-    await ensureDownload(SOURCE_URL, SOURCE_FILE);
-    const { heights, width, height } = await loadCrop();
+    await ensurePdsCrop();
+    const { heights, width, height } = await loadPdsCrop();
     return {
-      heights: decodeHeights(heights),
+      heights,
       width,
       height,
       info: {
-        dataset: 'NASA SVS CGI Moon Kit displacement map derived from LOLA global DEM (64 px/deg)',
+        dataset: 'PDS LOLA LDEM_64 JP2',
         citation:
-          'The displacement map is reformatted from LOLA gridded elevation data and exposed as uint16 half-meter offsets.',
-        sourceUrl: SOURCE_URL,
+          'Official LOLA GDR global DEM from the PDS Geosciences Node. JP2 crop samples are decoded from unsigned TIFF output via (value - 32768) * 0.5 meters.',
+        sourceUrl: PDS_JP2_URL,
       },
     };
   } catch (error) {
@@ -248,38 +260,125 @@ async function loadOrGenerateSource() {
       info: {
         dataset: 'Procedural Tycho fallback',
         citation:
-          'Generated locally from a crater morphology model because the remote NASA TIFF host timed out during bake.',
-        sourceUrl: SOURCE_URL,
+          'Generated locally from a crater morphology model because the official PDS JP2 source could not be decoded during bake.',
+        sourceUrl: PDS_JP2_URL,
       },
     };
   }
 }
 
-async function loadCrop() {
-  const tiff = await fromFile(SOURCE_FILE);
-  const image = await tiff.getImage();
-  const x0 = Math.round(((bounds.lonMin + 180) / 360) * image.getWidth());
-  const y0 = Math.round(((90 - bounds.latMax) / 180) * image.getHeight());
-  const x1 = x0 + SITE.widthSamples;
-  const y1 = y0 + SITE.heightSamples;
-  const raster = await image.readRasters({
-    window: [x0, y0, x1, y1],
-    interleave: true,
-  });
+async function ensurePdsCrop() {
+  try {
+    await loadPdsCrop();
+    return;
+  } catch (error) {
+    console.warn('PDS crop cache missing or invalid:', error.message);
+  }
+
+  try {
+    await buildPdsCropCache();
+    return;
+  } catch (error) {
+    console.warn('PDS crop build needs a complete JP2 cache:', error.message);
+  }
+
+  await resumeCurlDownload(PDS_JP2_URL, PDS_JP2_FILE);
+  await buildPdsCropCache();
+}
+
+async function loadPdsCrop() {
+  const buffer = await readFile(PDS_CROP_CACHE_FILE);
+  const expectedBytes = SITE.widthSamples * SITE.heightSamples * Float32Array.BYTES_PER_ELEMENT;
+  if (buffer.byteLength !== expectedBytes) {
+    throw new Error(`Unexpected PDS crop cache size ${buffer.byteLength}`);
+  }
+
+  const heights = new Float32Array(
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  );
 
   return {
-    heights: raster,
+    heights,
     width: SITE.widthSamples,
     height: SITE.heightSamples,
   };
 }
 
-function decodeHeights(values) {
+function decodePdsTiffHeights(values) {
   const decoded = new Float32Array(values.length);
   for (let index = 0; index < values.length; index += 1) {
-    decoded[index] = (values[index] - SOURCE_OFFSET) * SOURCE_SCALE;
+    decoded[index] = (values[index] - PDS_TIFF_SIGN_BIAS) * PDS_HEIGHT_SCALING;
   }
   return decoded;
+}
+
+async function buildPdsCropCache() {
+  const heights = await decodePdsCropByChunks();
+  await writeFile(
+    PDS_CROP_CACHE_FILE,
+    Buffer.from(heights.buffer, heights.byteOffset, heights.byteLength),
+  );
+}
+
+async function decodePdsCropByChunks() {
+  const { x0, y0, x1, y1 } = getPdsCropWindow();
+  const width = x1 - x0;
+  const height = y1 - y0;
+  const heights = new Float32Array(width * height);
+
+  for (let rowOffset = 0; rowOffset < height; rowOffset += PDS_CROP_CHUNK_SAMPLES) {
+    const chunkHeight = Math.min(PDS_CROP_CHUNK_SAMPLES, height - rowOffset);
+    for (let colOffset = 0; colOffset < width; colOffset += PDS_CROP_CHUNK_SAMPLES) {
+      const chunkWidth = Math.min(PDS_CROP_CHUNK_SAMPLES, width - colOffset);
+      const chunkValues = await decodePdsChunk(
+        x0 + colOffset,
+        y0 + rowOffset,
+        chunkWidth,
+        chunkHeight,
+      );
+
+      for (let row = 0; row < chunkHeight; row += 1) {
+        const targetStart = (rowOffset + row) * width + colOffset;
+        const sourceStart = row * chunkWidth;
+        heights.set(chunkValues.subarray(sourceStart, sourceStart + chunkWidth), targetStart);
+      }
+    }
+  }
+
+  return heights;
+}
+
+async function decodePdsChunk(x0, y0, width, height) {
+  await runProcess('opj_decompress', [
+    '-i',
+    PDS_JP2_FILE,
+    '-d',
+    `${x0},${y0},${x0 + width},${y0 + height}`,
+    '-o',
+    PDS_CHUNK_FILE,
+    '-quiet',
+  ]);
+
+  const tiff = await fromFile(PDS_CHUNK_FILE);
+  const image = await tiff.getImage();
+  if (image.getWidth() !== width || image.getHeight() !== height) {
+    throw new Error(`Unexpected PDS chunk size ${image.getWidth()}x${image.getHeight()}`);
+  }
+
+  const raster = await image.readRasters({
+    interleave: true,
+  });
+
+  return decodePdsTiffHeights(raster);
+}
+
+function getPdsCropWindow() {
+  const x0 = Math.round(((bounds.lonMin + 180) / 360) * PDS_WIDTH_SAMPLES);
+  const y0 = Math.round(((90 - bounds.latMax) / 180) * PDS_HEIGHT_SAMPLES);
+  const x1 = x0 + SITE.widthSamples;
+  const y1 = y0 + SITE.heightSamples;
+
+  return { x0, y0, x1, y1 };
 }
 
 function generateProceduralTycho() {
@@ -405,6 +504,57 @@ function makeShadedTexture(values, width, height, stepX, stepZ) {
   };
 }
 
+function makeDetailTexture(size) {
+  const pixels = new Uint8Array(size * size * 4);
+  const craterSeeds = Array.from({ length: 56 }, (_, index) => ({
+    x: fract(Math.sin(index * 91.17 + 0.71) * 43758.5453),
+    y: fract(Math.sin(index * 53.91 + 1.31) * 12741.381),
+    radius: 0.012 + fract(Math.sin(index * 13.4 + 0.91) * 9812.22) * 0.035,
+    depth: 0.08 + fract(Math.sin(index * 71.2 + 0.17) * 7441.12) * 0.2,
+  }));
+
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const u = col / size;
+      const v = row / size;
+      const waveA = Math.sin(u * Math.PI * 14) * Math.cos(v * Math.PI * 13);
+      const waveB = Math.sin((u + v) * Math.PI * 31) * 0.4;
+      const waveC = Math.cos((u * 2 - v) * Math.PI * 47) * 0.22;
+      let micro = waveA * 0.24 + waveB * 0.18 + waveC * 0.12;
+
+      for (const crater of craterSeeds) {
+        const dx = torusDistance(u, crater.x);
+        const dy = torusDistance(v, crater.y);
+        const distance = Math.hypot(dx, dy) / crater.radius;
+        if (distance < 1.4) {
+          const bowl = Math.exp(-distance * distance * 2.8) * crater.depth;
+          const rim = Math.exp(-Math.pow(distance - 0.92, 2) * 42) * crater.depth * 1.25;
+          micro += rim - bowl;
+        }
+      }
+
+      const streaks =
+        Math.sin((u * 0.7 + v * 1.3) * Math.PI * 26) * 0.08 +
+        Math.sin((u * 1.7 - v * 0.5) * Math.PI * 19) * 0.06;
+      const tone = clamp01(0.5 + micro + streaks);
+      const warm = 0.96 + tone * 0.18;
+      const coolShadow = 0.86 + tone * 0.14;
+
+      const pointer = (row * size + col) * 4;
+      pixels[pointer] = clampByte(166 * warm);
+      pixels[pointer + 1] = clampByte(156 * (0.94 + tone * 0.18));
+      pixels[pointer + 2] = clampByte(145 * coolShadow);
+      pixels[pointer + 3] = 255;
+    }
+  }
+
+  return {
+    width: size,
+    height: size,
+    pixels,
+  };
+}
+
 function buildTileManifest() {
   const tiles = [];
   const tileWidthMeters = world.widthMeters / SITE.grid.cols;
@@ -495,46 +645,36 @@ function sampleHeight(values, width, height, x, z) {
   return mix(mix(h00, h10, tx), mix(h01, h11, tx), tz);
 }
 
-async function ensureDownload(url, destination) {
-  try {
-    await stat(destination);
-    return;
-  } catch {
-    console.log(`Downloading source DEM from ${url}`);
-  }
+async function resumeCurlDownload(url, destination) {
+  await runProcess('curl', [
+    '-L',
+    '-C',
+    '-',
+    '--retry',
+    '8',
+    '--retry-all-errors',
+    '--connect-timeout',
+    '30',
+    '--max-time',
+    '0',
+    '-o',
+    destination,
+    url,
+  ]);
+}
 
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(`Failed to download ${url}`);
-  }
-
-  const totalBytes = Number(response.headers.get('content-length') ?? 0);
-  const fileStream = createWriteStream(destination);
-  const reader = response.body.getReader();
-  let receivedBytes = 0;
-  let lastCheckpoint = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    receivedBytes += value.byteLength;
-    fileStream.write(Buffer.from(value));
-
-    if (totalBytes > 0 && receivedBytes - lastCheckpoint > totalBytes * 0.1) {
-      console.log(`Download ${((receivedBytes / totalBytes) * 100).toFixed(0)}%`);
-      lastCheckpoint = receivedBytes;
-    }
-  }
-
+async function runProcess(command, args) {
   await new Promise((resolve, reject) => {
-    fileStream.end((error) => {
-      if (error) {
-        reject(error);
-      } else {
+    const child = spawn(command, args, {
+      stdio: 'inherit',
+    });
+
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
         resolve(undefined);
+      } else {
+        reject(new Error(`${command} exited with code ${code ?? 'unknown'}`));
       }
     });
   });
@@ -579,4 +719,17 @@ function clampByte(value) {
 
 function degreesToRadians(value) {
   return (value * Math.PI) / 180;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function fract(value) {
+  return value - Math.floor(value);
+}
+
+function torusDistance(a, b) {
+  const delta = Math.abs(a - b);
+  return Math.min(delta, 1 - delta);
 }

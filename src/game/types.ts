@@ -73,6 +73,11 @@ export interface TerrainLevelManifest {
 export interface TerrainLodManifest {
   textureLow: string;
   textureHigh: string;
+  detailOverlay?: {
+    texture: string;
+    repeat: number;
+    strength: number;
+  };
   levels: TerrainLevelManifest[];
   tiles: TerrainTileManifest[];
 }

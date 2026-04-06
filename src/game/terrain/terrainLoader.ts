@@ -27,6 +27,13 @@ export async function loadColorTexture(url: string): Promise<THREE.Texture> {
   return texture;
 }
 
+export async function loadRepeatingColorTexture(url: string): Promise<THREE.Texture> {
+  const texture = await loadColorTexture(url);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
 export async function loadTileHeights(tile: TerrainTileManifest, levelId: string): Promise<Float32Array> {
   const response = await fetch(tile.files[levelId]);
   if (!response.ok) {

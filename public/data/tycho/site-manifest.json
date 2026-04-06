@@ -11,9 +11,9 @@
   "world": {
     "widthMeters": 154454.14867837462,
     "heightMeters": 181940.1025448969,
-    "minHeightMeters": -1345.1568603515625,
-    "maxHeightMeters": 1348.717041015625,
-    "meanHeightMeters": 125.59353161822806,
+    "minHeightMeters": -3532,
+    "maxHeightMeters": 1806.5,
+    "meanHeightMeters": -372.5631215110057,
     "widthSamples": 449,
     "heightSamples": 385,
     "metersPerSampleX": 344.7637247285148,
@@ -24,17 +24,17 @@
     "rows": 4
   },
   "spawn": {
-    "lon": -13.85,
-    "lat": -41.48,
+    "lon": -11.36,
+    "lat": -43.31,
     "headingDegrees": 108,
-    "x": -54941.54717273612,
-    "y": -79.16022363281023,
-    "z": -55491.73127619372
+    "x": 0,
+    "y": -1351.5,
+    "z": 0
   },
   "source": {
-    "dataset": "Procedural Tycho fallback",
-    "citation": "Generated locally from a crater morphology model because the remote NASA TIFF host timed out during bake.",
-    "sourceUrl": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_64_uint.tif"
+    "dataset": "PDS LOLA LDEM_64 JP2",
+    "citation": "Official LOLA GDR global DEM from the PDS Geosciences Node. JP2 crop samples are decoded from unsigned TIFF output via (value - 32768) * 0.5 meters.",
+    "sourceUrl": "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/jp2/ldem_64.jp2"
   },
   "sunPresets": {
     "dawn": {

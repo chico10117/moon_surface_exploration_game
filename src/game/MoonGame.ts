@@ -13,16 +13,47 @@ interface MarkerState {
   baseY: number;
 }
 
+const ROVER_DIMENSIONS = {
+  bodyWidth: 2.6,
+  bodyHeight: 0.78,
+  bodyLength: 3.6,
+  bodyY: 0.92,
+  mastWidth: 0.16,
+  mastHeight: 0.82,
+  mastDepth: 0.16,
+  mastY: 1.52,
+  mastZ: 0.32,
+  headWidth: 0.62,
+  headHeight: 0.24,
+  headDepth: 0.42,
+  headY: 1.96,
+  headZ: 0.34,
+  wheelRadius: 0.46,
+  wheelThickness: 0.24,
+  wheelX: 1.08,
+  wheelY: 0.46,
+  wheelZFront: 1.18,
+  wheelZMid: 0,
+  wheelZRear: -1.18,
+  rideHeight: 0.62,
+  cameraTargetHeight: 1.75,
+  cameraDistance: 34,
+};
+
 export class MoonGame {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(52, 1, 10, 400000);
+  private readonly camera = new THREE.PerspectiveCamera(52, 1, 0.1, 400000);
   private readonly clock = new THREE.Clock();
   private readonly input = new InputController();
   private readonly hud: HudController;
   private readonly rover = new THREE.Group();
   private readonly cameraTarget = new THREE.Vector3();
   private readonly cameraDesired = new THREE.Vector3();
+  private readonly cameraOffset = new THREE.Vector3();
+  private readonly cameraForward = new THREE.Vector3();
+  private readonly cameraRight = new THREE.Vector3();
+  private readonly cameraBack = new THREE.Vector3();
   private readonly roverPosition = new THREE.Vector3();
   private readonly roverUp = new THREE.Vector3(0, 1, 0);
   private readonly roverForward = new THREE.Vector3(0, 0, 1);
@@ -35,6 +66,13 @@ export class MoonGame {
   private headingRadians = 0;
   private speedMps = 0;
   private batteryPercent = 100;
+  private cameraOrbitYawRadians = THREE.MathUtils.degToRad(18);
+  private cameraOrbitPitchRadians = 0.42;
+  private isDraggingCamera = false;
+  private activePointerId: number | null = null;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
+
   constructor(
     canvas: HTMLCanvasElement,
     bindings: HudBindings,
@@ -55,6 +93,7 @@ export class MoonGame {
 
     this.setupSceneScaffold();
     this.setupRover();
+    this.setupCameraControls(canvas);
     window.addEventListener('resize', this.handleResize);
   }
 
@@ -126,6 +165,59 @@ export class MoonGame {
     this.scene.add(stars);
   }
 
+  private setupCameraControls(canvas: HTMLCanvasElement): void {
+    canvas.style.touchAction = 'none';
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      this.isDraggingCamera = true;
+      this.activePointerId = event.pointerId;
+      this.lastPointerX = event.clientX;
+      this.lastPointerY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (!this.isDraggingCamera || event.pointerId !== this.activePointerId) {
+        return;
+      }
+
+      const deltaX = event.clientX - this.lastPointerX;
+      const deltaY = event.clientY - this.lastPointerY;
+      this.lastPointerX = event.clientX;
+      this.lastPointerY = event.clientY;
+
+      this.cameraOrbitYawRadians += deltaX * 0.0055;
+      this.cameraOrbitPitchRadians = THREE.MathUtils.clamp(
+        this.cameraOrbitPitchRadians + deltaY * 0.0032,
+        0.14,
+        1.18,
+      );
+    });
+
+    const releasePointer = (event: PointerEvent): void => {
+      if (event.pointerId !== this.activePointerId) {
+        return;
+      }
+
+      this.isDraggingCamera = false;
+      this.activePointerId = null;
+    };
+
+    canvas.addEventListener('pointerup', releasePointer);
+    canvas.addEventListener('pointercancel', releasePointer);
+    canvas.addEventListener('lostpointercapture', () => {
+      this.isDraggingCamera = false;
+      this.activePointerId = null;
+    });
+    canvas.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+    });
+  }
+
   private setupRover(): void {
     const bodyMaterial = new THREE.MeshStandardMaterial({
       color: '#f0b96f',
@@ -144,30 +236,56 @@ export class MoonGame {
       metalness: 0.04,
     });
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(900, 250, 1400), bodyMaterial);
-    body.position.y = 180;
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        ROVER_DIMENSIONS.bodyWidth,
+        ROVER_DIMENSIONS.bodyHeight,
+        ROVER_DIMENSIONS.bodyLength,
+      ),
+      bodyMaterial,
+    );
+    body.position.y = ROVER_DIMENSIONS.bodyY;
     body.castShadow = true;
     this.rover.add(body);
 
-    const mast = new THREE.Mesh(new THREE.BoxGeometry(80, 320, 80), trimMaterial);
-    mast.position.set(0, 420, 140);
+    const mast = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        ROVER_DIMENSIONS.mastWidth,
+        ROVER_DIMENSIONS.mastHeight,
+        ROVER_DIMENSIONS.mastDepth,
+      ),
+      trimMaterial,
+    );
+    mast.position.set(0, ROVER_DIMENSIONS.mastY, ROVER_DIMENSIONS.mastZ);
     mast.castShadow = true;
     this.rover.add(mast);
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(260, 110, 170), trimMaterial);
-    head.position.set(0, 560, 140);
+    const head = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        ROVER_DIMENSIONS.headWidth,
+        ROVER_DIMENSIONS.headHeight,
+        ROVER_DIMENSIONS.headDepth,
+      ),
+      trimMaterial,
+    );
+    head.position.set(0, ROVER_DIMENSIONS.headY, ROVER_DIMENSIONS.headZ);
     head.castShadow = true;
     this.rover.add(head);
 
-    const wheelGeometry = new THREE.CylinderGeometry(180, 180, 120, 20);
+    const wheelGeometry = new THREE.CylinderGeometry(
+      ROVER_DIMENSIONS.wheelRadius,
+      ROVER_DIMENSIONS.wheelRadius,
+      ROVER_DIMENSIONS.wheelThickness,
+      20,
+    );
     wheelGeometry.rotateZ(Math.PI / 2);
     const wheelOffsets = [
-      [-420, 60, 470],
-      [420, 60, 470],
-      [-420, 60, 0],
-      [420, 60, 0],
-      [-420, 60, -470],
-      [420, 60, -470],
+      [-ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZFront],
+      [ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZFront],
+      [-ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZMid],
+      [ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZMid],
+      [-ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZRear],
+      [ROVER_DIMENSIONS.wheelX, ROVER_DIMENSIONS.wheelY, ROVER_DIMENSIONS.wheelZRear],
     ];
 
     for (const [x, y, z] of wheelOffsets) {
@@ -192,7 +310,7 @@ export class MoonGame {
 
     const spawn = this.siteData.site.spawn;
     const terrainHeight = this.terrainSystem.sampleHeight(spawn.x, spawn.z);
-    this.roverPosition.set(spawn.x, terrainHeight + 320, spawn.z);
+    this.roverPosition.set(spawn.x, terrainHeight + ROVER_DIMENSIONS.rideHeight, spawn.z);
     this.rebuildMarkers();
     this.updateRoverTransform();
   }
@@ -293,7 +411,7 @@ export class MoonGame {
     );
 
     const height = this.terrainSystem.sampleHeight(this.roverPosition.x, this.roverPosition.z);
-    this.roverPosition.y = height + 320;
+    this.roverPosition.y = height + ROVER_DIMENSIONS.rideHeight;
 
     this.updateBattery(deltaSeconds, throttleInput, scanHeld);
     this.updateRoverTransform();
@@ -358,11 +476,28 @@ export class MoonGame {
   }
 
   private updateCamera(deltaSeconds: number): void {
-    this.cameraTarget.copy(this.roverPosition).addScaledVector(this.roverUp, 700);
-    this.cameraDesired
+    this.cameraTarget
       .copy(this.roverPosition)
-      .addScaledVector(this.roverUp, 2100)
-      .addScaledVector(this.roverForward, -4600);
+      .addScaledVector(this.roverUp, ROVER_DIMENSIONS.cameraTargetHeight);
+
+    this.cameraForward
+      .set(Math.sin(this.cameraOrbitYawRadians), 0, Math.cos(this.cameraOrbitYawRadians))
+      .normalize();
+    this.cameraRight.crossVectors(this.cameraForward, this.roverUp).normalize();
+    this.cameraBack
+      .copy(this.cameraForward)
+      .multiplyScalar(-1)
+      .normalize();
+
+    this.cameraOffset
+      .copy(this.cameraBack)
+      .multiplyScalar(ROVER_DIMENSIONS.cameraDistance * Math.cos(this.cameraOrbitPitchRadians))
+      .addScaledVector(
+        this.roverUp,
+        ROVER_DIMENSIONS.cameraDistance * Math.sin(this.cameraOrbitPitchRadians),
+      );
+
+    this.cameraDesired.copy(this.cameraTarget).add(this.cameraOffset);
 
     this.camera.position.lerp(this.cameraDesired, 1 - Math.exp(-deltaSeconds * 2.8));
     this.camera.lookAt(this.cameraTarget);

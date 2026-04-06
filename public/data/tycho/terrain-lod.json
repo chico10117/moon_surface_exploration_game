@@ -1,6 +1,11 @@
 {
   "textureLow": "/data/tycho/relief-low.png",
   "textureHigh": "/data/tycho/relief-high.png",
+  "detailOverlay": {
+    "texture": "/data/tycho/detail-albedo.png",
+    "repeat": 54,
+    "strength": 0.68
+  },
   "levels": [
     {
       "id": "boot",

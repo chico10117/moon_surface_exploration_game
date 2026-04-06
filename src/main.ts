@@ -57,7 +57,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 
     <section class="panel panel-status">
       <div class="status-pill" id="status-pill">Streaming terrain</div>
-      <p id="action-prompt" class="action-prompt">W/S drive, A/D steer, Shift boost, E scan.</p>
+      <p id="action-prompt" class="action-prompt">
+        W/S drive, A/D steer, drag mouse to orbit, Shift boost, E scan.
+      </p>
     </section>
 
     <section class="panel panel-controls">
@@ -65,6 +67,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <ul class="control-list">
         <li><span>Drive</span><strong>W / S</strong></li>
         <li><span>Steer</span><strong>A / D</strong></li>
+        <li><span>Orbit Camera</span><strong>Mouse drag</strong></li>
         <li><span>Boost</span><strong>Shift</strong></li>
         <li><span>Brake</span><strong>Space</strong></li>
         <li><span>Scan</span><strong>E</strong></li>
