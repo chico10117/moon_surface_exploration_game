@@ -15,8 +15,8 @@ export class TerrainSystem {
   private readonly levelById = new Map<string, TerrainLevelManifest>();
   private readonly pendingDetailLoads = new Set<string>();
   private readonly material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#d7ccb5'),
-    roughness: 1,
+    color: new THREE.Color('#ffffff'),
+    roughness: 0.98,
     metalness: 0,
   });
   private detailTextureLoaded = false;
@@ -33,7 +33,7 @@ export class TerrainSystem {
   }
 
   public async initialize(): Promise<void> {
-    const lowTexture = await loadColorTexture(this.manifest.textureLow);
+    const lowTexture = await loadColorTexture(this.manifest.albedoLow);
     this.material.map = lowTexture;
     this.material.needsUpdate = true;
 
@@ -54,10 +54,10 @@ export class TerrainSystem {
       }),
     );
 
-    void this.loadDetailTexture();
+    void this.loadHighAlbedoTexture();
   }
 
-  public update(playerPosition: THREE.Vector3): void {
+  public update(playerPosition: THREE.Vector3, preloadRadius = 1): void {
     const activeTile = this.getTileForPosition(playerPosition.x, playerPosition.z);
     if (!activeTile) {
       return;
@@ -66,7 +66,7 @@ export class TerrainSystem {
     this.activeTileKey = activeTile.key;
     for (const tile of this.manifest.tiles) {
       const distance = Math.abs(tile.col - activeTile.col) + Math.abs(tile.row - activeTile.row);
-      if (distance <= 1) {
+      if (distance <= preloadRadius) {
         this.ensureDetailTile(tile);
       }
     }
@@ -136,8 +136,8 @@ export class TerrainSystem {
     return new THREE.Vector3(-dhdx, 1, -dhdz).normalize();
   }
 
-  private async loadDetailTexture(): Promise<void> {
-    const texture = await loadColorTexture(this.manifest.textureHigh);
+  private async loadHighAlbedoTexture(): Promise<void> {
+    const texture = await loadColorTexture(this.manifest.albedoHigh);
     this.material.map = texture;
     this.material.needsUpdate = true;
     this.detailTextureLoaded = true;
@@ -160,10 +160,14 @@ uniform float detailStrength;`,
         .replace(
           '#include <map_fragment>',
           `#include <map_fragment>
-vec3 detailSample = texture2D(detailMap, vMapUv * detailRepeat).rgb;
-float detailLuma = dot(detailSample, vec3(0.299, 0.587, 0.114));
-float detailContrast = mix(0.7, 1.35, detailLuma);
-diffuseColor.rgb *= mix(vec3(1.0), vec3(detailContrast), detailStrength);`,
+vec3 detailNear = texture2D(detailMap, vMapUv * detailRepeat).rgb;
+vec3 detailMid = texture2D(detailMap, vMapUv * (detailRepeat * 0.28) + vec2(0.17, 0.31)).rgb;
+float nearLuma = dot(detailNear, vec3(0.299, 0.587, 0.114));
+float midLuma = dot(detailMid, vec3(0.299, 0.587, 0.114));
+float detailMask = mix(midLuma, nearLuma, 0.68);
+float detailContrast = mix(0.82, 1.18, detailMask);
+diffuseColor.rgb *= mix(vec3(1.0), vec3(detailContrast), detailStrength);
+`,
         );
     };
     this.material.needsUpdate = true;

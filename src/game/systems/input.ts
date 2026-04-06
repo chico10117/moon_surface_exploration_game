@@ -29,4 +29,8 @@ export class InputController {
     }
     return value;
   }
+
+  public clear(): void {
+    this.pressed.clear();
+  }
 }

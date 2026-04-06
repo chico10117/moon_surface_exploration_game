@@ -1,6 +1,6 @@
 import './style.css';
 import { MoonGame } from './game/MoonGame';
-import type { HudBindings } from './game/ui/hud';
+import type { GameBindings } from './game/ui/hud';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div class="shell">
@@ -9,19 +9,52 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div class="grid-line grid-line-x"></div>
       <div class="grid-line grid-line-y"></div>
     </div>
+    <section id="vehicle-selector" class="vehicle-selector is-active is-loading">
+      <div class="vehicle-selector-panel">
+        <p class="eyebrow">Deployment Bay</p>
+        <h2 id="selector-title">Preparing deployment</h2>
+        <p id="selector-copy" class="selector-copy">
+          Streaming terrain manifests and survey objectives.
+        </p>
+        <div class="selector-grid">
+          <button
+            id="select-rover"
+            class="selector-card"
+            type="button"
+            disabled
+            aria-describedby="selector-hint"
+          >
+            <span class="selector-kicker">1</span>
+            <strong>Rover</strong>
+            <span>Mission-capable survey vehicle with scans, braking, and ground contact.</span>
+          </button>
+          <button
+            id="select-drone"
+            class="selector-card"
+            type="button"
+            disabled
+            aria-describedby="selector-hint"
+          >
+            <span class="selector-kicker">2</span>
+            <strong>Drone</strong>
+            <span>Fast recon scout for traversal only. Survey markers stay visible, but scans are disabled.</span>
+          </button>
+        </div>
+        <p id="selector-hint" class="selector-hint">Press 1 for rover or 2 for drone.</p>
+      </div>
+    </section>
 
     <section class="panel panel-brand">
       <p class="eyebrow">Lunar Survey Slice</p>
       <h1>Tycho Survey</h1>
       <p class="lede">
-        Real lunar relief, streamed from a baked LOLA heightfield. The rover slice covers a
-        measured corridor around Tycho crater with geology survey objectives and a follow-up EVA
-        path.
+        Real lunar relief, streamed from a baked LOLA heightfield. Deploy the survey rover for
+        geology passes or launch a scout drone for rapid terrain reconnaissance across Tycho.
       </p>
       <div class="chips">
         <span class="chip">Tycho crater</span>
         <span class="chip">LOLA 64 px/deg</span>
-        <span class="chip">Rover-first mission</span>
+        <span class="chip">Dual-vehicle deploy</span>
       </div>
     </section>
 
@@ -58,26 +91,18 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <section class="panel panel-status">
       <div class="status-pill" id="status-pill">Streaming terrain</div>
       <p id="action-prompt" class="action-prompt">
-        W/S drive, A/D steer, drag mouse to orbit, Shift boost, E scan.
+        Streaming terrain manifests.
       </p>
     </section>
 
     <section class="panel panel-controls">
       <p class="eyebrow">Controls</p>
-      <ul class="control-list">
-        <li><span>Drive</span><strong>W / S</strong></li>
-        <li><span>Steer</span><strong>A / D</strong></li>
-        <li><span>Orbit Camera</span><strong>Mouse drag</strong></li>
-        <li><span>Boost</span><strong>Shift</strong></li>
-        <li><span>Brake</span><strong>Space</strong></li>
-        <li><span>Scan</span><strong>E</strong></li>
-        <li><span>Reset</span><strong>R</strong></li>
-      </ul>
+      <ul id="control-list" class="control-list"></ul>
     </section>
   </div>
 `;
 
-const hud: HudBindings = {
+const bindings: GameBindings = {
   missionTitle: document.querySelector<HTMLElement>('#mission-title')!,
   missionCopy: document.querySelector<HTMLElement>('#mission-copy')!,
   objectiveList: document.querySelector<HTMLOListElement>('#objective-list')!,
@@ -88,8 +113,15 @@ const hud: HudBindings = {
   telemetryTile: document.querySelector<HTMLElement>('#telemetry-tile')!,
   statusPill: document.querySelector<HTMLElement>('#status-pill')!,
   actionPrompt: document.querySelector<HTMLElement>('#action-prompt')!,
+  controlList: document.querySelector<HTMLUListElement>('#control-list')!,
+  vehicleSelector: document.querySelector<HTMLElement>('#vehicle-selector')!,
+  selectorTitle: document.querySelector<HTMLElement>('#selector-title')!,
+  selectorCopy: document.querySelector<HTMLElement>('#selector-copy')!,
+  selectorHint: document.querySelector<HTMLElement>('#selector-hint')!,
+  roverSelectButton: document.querySelector<HTMLButtonElement>('#select-rover')!,
+  droneSelectButton: document.querySelector<HTMLButtonElement>('#select-drone')!,
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#viewport')!;
-const game = new MoonGame(canvas, hud);
+const game = new MoonGame(canvas, bindings);
 void game.start();

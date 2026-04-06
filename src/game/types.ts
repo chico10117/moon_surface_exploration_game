@@ -1,3 +1,11 @@
+export interface RasterSourceManifest {
+  dataset: string;
+  citation: string;
+  sourceUrl: string;
+  productId?: string;
+  warning?: string;
+}
+
 export interface SiteManifest {
   id: string;
   title: string;
@@ -30,9 +38,8 @@ export interface SiteManifest {
     headingDegrees: number;
   };
   source: {
-    dataset: string;
-    citation: string;
-    sourceUrl: string;
+    topography: RasterSourceManifest;
+    albedo: RasterSourceManifest;
   };
   sunPresets: Record<
     string,
@@ -71,8 +78,8 @@ export interface TerrainLevelManifest {
 }
 
 export interface TerrainLodManifest {
-  textureLow: string;
-  textureHigh: string;
+  albedoLow: string;
+  albedoHigh: string;
   detailOverlay?: {
     texture: string;
     repeat: number;
@@ -106,7 +113,9 @@ export interface LoadedSiteData {
   mission: MissionManifest;
 }
 
-export interface RoverTelemetry {
+export type VehicleMode = 'rover' | 'drone';
+
+export interface VehicleTelemetry {
   speedMps: number;
   slopeDegrees: number;
   batteryPercent: number;

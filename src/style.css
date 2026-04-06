@@ -55,6 +55,123 @@ select {
   isolation: isolate;
 }
 
+.vehicle-selector {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at center, rgba(10, 15, 24, 0.22), rgba(3, 5, 10, 0.78)),
+    linear-gradient(180deg, rgba(4, 7, 12, 0.36), rgba(4, 6, 10, 0.7));
+  backdrop-filter: blur(14px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.vehicle-selector.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.vehicle-selector-panel {
+  width: min(820px, calc(100vw - 56px));
+  padding: 30px 32px;
+  border: 1px solid rgba(255, 193, 107, 0.18);
+  background:
+    linear-gradient(180deg, rgba(11, 16, 26, 0.95), rgba(8, 11, 18, 0.9)),
+    rgba(8, 11, 18, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.vehicle-selector-panel h2 {
+  margin: 0;
+  font-family: var(--display-font);
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 0.94;
+  letter-spacing: -0.04em;
+}
+
+.selector-copy,
+.selector-hint {
+  color: var(--text-muted);
+}
+
+.selector-copy {
+  margin: 0.8rem 0 0;
+  max-width: 44rem;
+}
+
+.selector-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.4rem;
+}
+
+.selector-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1.1rem 1.1rem 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    rgba(7, 10, 16, 0.86);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.selector-card:hover:not(:disabled),
+.selector-card:focus-visible:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: rgba(255, 194, 111, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 194, 111, 0.16), rgba(255, 194, 111, 0.06)),
+    rgba(10, 13, 20, 0.92);
+  outline: none;
+}
+
+.selector-card:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.selector-card strong {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.selector-card span:last-child {
+  color: var(--text-muted);
+}
+
+.selector-kicker {
+  display: inline-grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.selector-hint {
+  margin: 1rem 0 0;
+}
+
+.vehicle-selector.is-loading .selector-hint {
+  opacity: 0.72;
+}
+
 #viewport {
   position: absolute;
   inset: 0;
@@ -362,5 +479,18 @@ select {
   .panel-status,
   .panel-controls {
     clip-path: none;
+  }
+
+  .vehicle-selector {
+    position: fixed;
+  }
+
+  .vehicle-selector-panel {
+    width: min(100%, 620px);
+    padding: 24px;
+  }
+
+  .selector-grid {
+    grid-template-columns: 1fr;
   }
 }

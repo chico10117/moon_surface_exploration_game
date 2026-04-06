@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
@@ -13,6 +13,19 @@ const PDS_JP2_URL =
 const PDS_JP2_FILE = path.join(CACHE_DIR, 'ldem_64.jp2');
 const PDS_CROP_CACHE_FILE = path.join(CACHE_DIR, 'ldem_64_tycho_crop.f32');
 const PDS_CHUNK_FILE = path.join(CACHE_DIR, 'ldem_64_chunk.tif');
+const LROC_ALBEDO_PRODUCT_ID = 'WAC_EMP_3BAND_E300S3150_064P';
+const LROC_ALBEDO_URL =
+  'https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/MDR/WAC_EMP/WAC_EMP_3BAND_E300S3150_064P.TIF';
+const LROC_ALBEDO_FILE = path.join(CACHE_DIR, 'lroc_wac_emp_3band_e300s3150_064p.tif');
+const LROC_ALBEDO_CROP_CACHE_FILE = path.join(CACHE_DIR, 'lroc_wac_emp_3band_e300s3150_064p_tycho_crop.rgba');
+const LROC_ALBEDO_WIDTH_SAMPLES = 5760;
+const LROC_ALBEDO_HEIGHT_SAMPLES = 3840;
+const LROC_ALBEDO_TILE_BOUNDS = {
+  lonMin: 270,
+  lonMax: 360,
+  latMin: -60,
+  latMax: 0,
+};
 const PDS_CROP_CHUNK_SAMPLES = 128;
 const PDS_WIDTH_SAMPLES = 23040;
 const PDS_HEIGHT_SAMPLES = 11520;
@@ -66,29 +79,22 @@ await mkdir(CACHE_DIR, { recursive: true });
 await mkdir(path.join(OUTPUT_DIR, 'boot'), { recursive: true });
 await mkdir(path.join(OUTPUT_DIR, 'detail'), { recursive: true });
 
-const source = await loadOrGenerateSource();
-const { width, height } = source;
-const decodedHeights = source.heights;
-const lowHeights = downsample(decodedHeights, width, height, 4);
-
-const highTexture = makeShadedTexture(
+const topographySource = await loadOrGenerateTopographySource();
+const { width, height } = topographySource;
+const decodedHeights = topographySource.heights;
+const albedoSource = await loadOrGenerateAlbedoSource(
   decodedHeights,
   width,
   height,
   world.widthMeters / (width - 1),
   world.heightMeters / (height - 1),
 );
-const lowTexture = makeShadedTexture(
-  lowHeights.values,
-  lowHeights.width,
-  lowHeights.height,
-  world.widthMeters / (lowHeights.width - 1),
-  world.heightMeters / (lowHeights.height - 1),
-);
-const detailTexture = makeDetailTexture(512);
+const lowHeights = downsample(decodedHeights, width, height, 4);
+const lowAlbedo = downsampleTexture(albedoSource.texture, 4);
+const detailTexture = makeDetailTexture(1024);
 
-await writePng(path.join(OUTPUT_DIR, 'relief-high.png'), highTexture);
-await writePng(path.join(OUTPUT_DIR, 'relief-low.png'), lowTexture);
+await writePng(path.join(OUTPUT_DIR, 'albedo-high.png'), albedoSource.texture);
+await writePng(path.join(OUTPUT_DIR, 'albedo-low.png'), lowAlbedo);
 await writePng(path.join(OUTPUT_DIR, 'detail-albedo.png'), detailTexture);
 
 const tileManifest = buildTileManifest();
@@ -143,7 +149,10 @@ const siteManifest = {
     width,
     height,
   ),
-  source: source.info,
+  source: {
+    topography: topographySource.info,
+    albedo: albedoSource.info,
+  },
   sunPresets: {
     dawn: { azimuthDegrees: 128, elevationDegrees: 8 },
     noon: { azimuthDegrees: 158, elevationDegrees: 27 },
@@ -152,12 +161,12 @@ const siteManifest = {
 };
 
 const terrainManifest = {
-  textureLow: '/data/tycho/relief-low.png',
-  textureHigh: '/data/tycho/relief-high.png',
+  albedoLow: '/data/tycho/albedo-low.png',
+  albedoHigh: '/data/tycho/albedo-high.png',
   detailOverlay: {
     texture: '/data/tycho/detail-albedo.png',
-    repeat: 54,
-    strength: 0.68,
+    repeat: 66,
+    strength: 0.26,
   },
   levels: [
     { id: 'boot', samplesX: SITE.bootSamplesPerTile.x, samplesZ: SITE.bootSamplesPerTile.z },
@@ -236,7 +245,7 @@ await writeJson(path.join(OUTPUT_DIR, 'mission.json'), missionManifest);
 
 console.log(`Baked Tycho corridor to ${OUTPUT_DIR}`);
 
-async function loadOrGenerateSource() {
+async function loadOrGenerateTopographySource() {
   try {
     await ensurePdsCrop();
     const { heights, width, height } = await loadPdsCrop();
@@ -262,6 +271,36 @@ async function loadOrGenerateSource() {
         citation:
           'Generated locally from a crater morphology model because the official PDS JP2 source could not be decoded during bake.',
         sourceUrl: PDS_JP2_URL,
+        warning: `Falling back to procedural topography because the PDS JP2 source could not be decoded: ${error.message}`,
+      },
+    };
+  }
+}
+
+async function loadOrGenerateAlbedoSource(heights, width, height, stepX, stepZ) {
+  try {
+    await ensureLrocCrop();
+    return {
+      texture: await loadLrocCrop(),
+      info: {
+        dataset: 'LROC WAC Empirically Normalized 3-band mosaic',
+        citation:
+          'Official 64 px/deg LROC WAC 3-band RGB empirically normalized mosaic (R=689 nm, G=415 nm, B=321 nm), cropped to the Tycho survey window.',
+        sourceUrl: LROC_ALBEDO_URL,
+        productId: LROC_ALBEDO_PRODUCT_ID,
+      },
+    };
+  } catch (error) {
+    console.warn('Falling back to synthetic Tycho albedo:', error.message);
+    return {
+      texture: makeFallbackAlbedoTexture(heights, width, height, stepX, stepZ),
+      info: {
+        dataset: 'Synthetic Tycho albedo fallback',
+        citation:
+          'Generated locally from the Tycho terrain crop because the official LROC WAC 3-band color source was unavailable during bake.',
+        sourceUrl: LROC_ALBEDO_URL,
+        productId: LROC_ALBEDO_PRODUCT_ID,
+        warning: `Falling back to synthetic grayscale albedo because the official LROC WAC color crop was unavailable: ${error.message}`,
       },
     };
   }
@@ -381,6 +420,114 @@ function getPdsCropWindow() {
   return { x0, y0, x1, y1 };
 }
 
+async function ensureLrocCrop() {
+  try {
+    await loadLrocCrop();
+    return;
+  } catch (error) {
+    console.warn('LROC crop cache missing or invalid:', error.message);
+  }
+
+  try {
+    await buildLrocCropCache();
+    return;
+  } catch (error) {
+    console.warn('LROC crop build needs a complete TIFF cache:', error.message);
+  }
+
+  await resumeCurlDownload(LROC_ALBEDO_URL, LROC_ALBEDO_FILE);
+  await buildLrocCropCache();
+}
+
+async function loadLrocCrop() {
+  const buffer = await readFile(LROC_ALBEDO_CROP_CACHE_FILE);
+  const expectedBytes = SITE.widthSamples * SITE.heightSamples * 4;
+  if (buffer.byteLength !== expectedBytes) {
+    throw new Error(`Unexpected LROC crop cache size ${buffer.byteLength}`);
+  }
+
+  return {
+    width: SITE.widthSamples,
+    height: SITE.heightSamples,
+    pixels: new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)),
+  };
+}
+
+async function buildLrocCropCache() {
+  const texture = await decodeLrocCrop();
+  await writeFile(
+    LROC_ALBEDO_CROP_CACHE_FILE,
+    Buffer.from(texture.pixels.buffer, texture.pixels.byteOffset, texture.pixels.byteLength),
+  );
+}
+
+async function decodeLrocCrop() {
+  const tiff = await fromFile(LROC_ALBEDO_FILE);
+  const image = await tiff.getImage();
+  if (
+    image.getWidth() !== LROC_ALBEDO_WIDTH_SAMPLES ||
+    image.getHeight() !== LROC_ALBEDO_HEIGHT_SAMPLES ||
+    image.getSamplesPerPixel() < 3
+  ) {
+    throw new Error(
+      `Unexpected LROC TIFF layout ${image.getWidth()}x${image.getHeight()} with ${image.getSamplesPerPixel()} bands`,
+    );
+  }
+
+  const { x0, y0, x1, y1 } = getLrocCropWindow();
+  const raster = await image.readRasters({
+    window: [x0, y0, x1, y1],
+    samples: [0, 1, 2],
+    interleave: true,
+  });
+  if (raster.length !== SITE.widthSamples * SITE.heightSamples * 3) {
+    throw new Error(`Unexpected LROC raster length ${raster.length}`);
+  }
+
+  const pixels = new Uint8Array(SITE.widthSamples * SITE.heightSamples * 4);
+  for (let sourceIndex = 0, pixelIndex = 0; sourceIndex < raster.length; sourceIndex += 3, pixelIndex += 4) {
+    pixels[pixelIndex] = raster[sourceIndex];
+    pixels[pixelIndex + 1] = raster[sourceIndex + 1];
+    pixels[pixelIndex + 2] = raster[sourceIndex + 2];
+    pixels[pixelIndex + 3] = 255;
+  }
+
+  return {
+    width: SITE.widthSamples,
+    height: SITE.heightSamples,
+    pixels,
+  };
+}
+
+function getLrocCropWindow() {
+  const lonMin = normalizePositiveEastLongitude(bounds.lonMin);
+  const lonMax = normalizePositiveEastLongitude(bounds.lonMax);
+  const x0 = Math.round(
+    ((lonMin - LROC_ALBEDO_TILE_BOUNDS.lonMin) /
+      (LROC_ALBEDO_TILE_BOUNDS.lonMax - LROC_ALBEDO_TILE_BOUNDS.lonMin)) *
+      LROC_ALBEDO_WIDTH_SAMPLES,
+  );
+  const y0 = Math.round(
+    ((LROC_ALBEDO_TILE_BOUNDS.latMax - bounds.latMax) /
+      (LROC_ALBEDO_TILE_BOUNDS.latMax - LROC_ALBEDO_TILE_BOUNDS.latMin)) *
+      LROC_ALBEDO_HEIGHT_SAMPLES,
+  );
+  const x1 = x0 + SITE.widthSamples;
+  const y1 = y0 + SITE.heightSamples;
+
+  if (
+    lonMax > LROC_ALBEDO_TILE_BOUNDS.lonMax ||
+    x0 < 0 ||
+    y0 < 0 ||
+    x1 > LROC_ALBEDO_WIDTH_SAMPLES ||
+    y1 > LROC_ALBEDO_HEIGHT_SAMPLES
+  ) {
+    throw new Error(`Tycho crop window falls outside the LROC albedo tile: ${x0},${y0},${x1},${y1}`);
+  }
+
+  return { x0, y0, x1, y1 };
+}
+
 function generateProceduralTycho() {
   const values = new Float32Array(SITE.widthSamples * SITE.heightSamples);
   const centerX = SITE.widthSamples * 0.51;
@@ -455,7 +602,33 @@ function downsample(values, width, height, factor) {
   };
 }
 
-function makeShadedTexture(values, width, height, stepX, stepZ) {
+function downsampleTexture(texture, factor) {
+  const downWidth = Math.floor((texture.width - 1) / factor) + 1;
+  const downHeight = Math.floor((texture.height - 1) / factor) + 1;
+  const pixels = new Uint8Array(downWidth * downHeight * 4);
+
+  for (let row = 0; row < downHeight; row += 1) {
+    for (let col = 0; col < downWidth; col += 1) {
+      const sourceX = Math.min(texture.width - 1, col * factor);
+      const sourceY = Math.min(texture.height - 1, row * factor);
+      const sourcePointer = (sourceY * texture.width + sourceX) * 4;
+      const targetPointer = (row * downWidth + col) * 4;
+
+      pixels[targetPointer] = texture.pixels[sourcePointer];
+      pixels[targetPointer + 1] = texture.pixels[sourcePointer + 1];
+      pixels[targetPointer + 2] = texture.pixels[sourcePointer + 2];
+      pixels[targetPointer + 3] = texture.pixels[sourcePointer + 3];
+    }
+  }
+
+  return {
+    width: downWidth,
+    height: downHeight,
+    pixels,
+  };
+}
+
+function makeFallbackAlbedoTexture(values, width, height, stepX, stepZ) {
   let minHeight = Infinity;
   let maxHeight = -Infinity;
   for (const value of values) {
@@ -464,35 +637,32 @@ function makeShadedTexture(values, width, height, stepX, stepZ) {
   }
 
   const pixels = new Uint8Array(width * height * 4);
-  const sun = normalize([0.48, 0.83, -0.27]);
 
   for (let row = 0; row < height; row += 1) {
     for (let col = 0; col < width; col += 1) {
       const center = values[row * width + col];
       const left = values[row * width + Math.max(0, col - 1)];
       const right = values[row * width + Math.min(width - 1, col + 1)];
-      const down = values[Math.max(0, row - 1) * width + col];
-      const up = values[Math.min(height - 1, row + 1) * width + col];
+      const lower = values[Math.max(0, row - 1) * width + col];
+      const upper = values[Math.min(height - 1, row + 1) * width + col];
 
       const dx = (right - left) / (2 * stepX);
-      const dz = (up - down) / (2 * stepZ);
+      const dz = (upper - lower) / (2 * stepZ);
       const normal = normalize([-dx * 16, 1, -dz * 16]);
-      const diffuse = Math.max(0.2, dot(normal, sun) * 0.88 + 0.22);
       const elevation = (center - minHeight) / Math.max(1, maxHeight - minHeight);
-      const roughness = Math.min(1, Math.abs(dx) * 1200 + Math.abs(dz) * 1200);
-      const craterTint = Math.pow(1 - elevation, 1.35);
-
-      const base = {
-        r: mix(108, 215, elevation * 0.82 + craterTint * 0.12),
-        g: mix(102, 196, elevation * 0.8 + craterTint * 0.1),
-        b: mix(96, 176, elevation * 0.77),
-      };
-
-      const lightness = diffuse * (0.9 - roughness * 0.25);
+      const slope = clamp01(1 - normal[1]);
+      const craterTint = Math.pow(1 - elevation, 1.28);
+      const ejectaBands = clamp01(
+        0.5 +
+          Math.sin((col / Math.max(1, width - 1)) * Math.PI * 9 + elevation * 6.2) * 0.12 +
+          Math.cos((row / Math.max(1, height - 1)) * Math.PI * 12 - craterTint * 4.8) * 0.08,
+      );
+      const albedo = clamp01(0.26 + elevation * 0.34 + craterTint * 0.14 + ejectaBands * 0.08 - slope * 0.2);
+      const tone = mix(92, 182, albedo);
       const pointer = (row * width + col) * 4;
-      pixels[pointer] = clampByte(base.r * lightness);
-      pixels[pointer + 1] = clampByte(base.g * lightness);
-      pixels[pointer + 2] = clampByte(base.b * (lightness + 0.04));
+      pixels[pointer] = clampByte(tone);
+      pixels[pointer + 1] = clampByte(tone);
+      pixels[pointer + 2] = clampByte(tone);
       pixels[pointer + 3] = 255;
     }
   }
@@ -506,44 +676,47 @@ function makeShadedTexture(values, width, height, stepX, stepZ) {
 
 function makeDetailTexture(size) {
   const pixels = new Uint8Array(size * size * 4);
-  const craterSeeds = Array.from({ length: 56 }, (_, index) => ({
+  const craterSeeds = Array.from({ length: 96 }, (_, index) => ({
     x: fract(Math.sin(index * 91.17 + 0.71) * 43758.5453),
     y: fract(Math.sin(index * 53.91 + 1.31) * 12741.381),
-    radius: 0.012 + fract(Math.sin(index * 13.4 + 0.91) * 9812.22) * 0.035,
-    depth: 0.08 + fract(Math.sin(index * 71.2 + 0.17) * 7441.12) * 0.2,
+    radius: 0.008 + fract(Math.sin(index * 13.4 + 0.91) * 9812.22) * 0.03,
+    depth: 0.07 + fract(Math.sin(index * 71.2 + 0.17) * 7441.12) * 0.22,
   }));
 
   for (let row = 0; row < size; row += 1) {
     for (let col = 0; col < size; col += 1) {
       const u = col / size;
       const v = row / size;
-      const waveA = Math.sin(u * Math.PI * 14) * Math.cos(v * Math.PI * 13);
-      const waveB = Math.sin((u + v) * Math.PI * 31) * 0.4;
-      const waveC = Math.cos((u * 2 - v) * Math.PI * 47) * 0.22;
-      let micro = waveA * 0.24 + waveB * 0.18 + waveC * 0.12;
+      const broadWave = Math.sin((u * 0.86 + v * 1.14) * Math.PI * 10) * 0.16;
+      const ridgeWave = Math.sin((u + v) * Math.PI * 28) * 0.12;
+      const fineWave =
+        Math.sin(u * Math.PI * 72) * Math.cos(v * Math.PI * 65) * 0.06 +
+        Math.cos((u * 3.4 - v * 2.1) * Math.PI * 34) * 0.05;
+      let micro = broadWave + ridgeWave + fineWave;
 
       for (const crater of craterSeeds) {
         const dx = torusDistance(u, crater.x);
         const dy = torusDistance(v, crater.y);
         const distance = Math.hypot(dx, dy) / crater.radius;
-        if (distance < 1.4) {
-          const bowl = Math.exp(-distance * distance * 2.8) * crater.depth;
-          const rim = Math.exp(-Math.pow(distance - 0.92, 2) * 42) * crater.depth * 1.25;
+        if (distance < 1.55) {
+          const bowl = Math.exp(-distance * distance * 2.9) * crater.depth;
+          const rim = Math.exp(-Math.pow(distance - 0.9, 2) * 38) * crater.depth * 1.35;
           micro += rim - bowl;
         }
       }
 
-      const streaks =
-        Math.sin((u * 0.7 + v * 1.3) * Math.PI * 26) * 0.08 +
-        Math.sin((u * 1.7 - v * 0.5) * Math.PI * 19) * 0.06;
-      const tone = clamp01(0.5 + micro + streaks);
-      const warm = 0.96 + tone * 0.18;
-      const coolShadow = 0.86 + tone * 0.14;
+      const rays =
+        Math.sin((u * 0.72 + v * 1.28) * Math.PI * 24) * 0.07 +
+        Math.sin((u * 1.9 - v * 0.42) * Math.PI * 18) * 0.06 +
+        Math.cos((u * 0.4 + v * 2.05) * Math.PI * 42) * 0.04;
+      const tone = clamp01(0.5 + micro + rays);
+      const grain = 0.68 + tone * 0.42;
+      const value = clampByte(132 + grain * 78);
 
       const pointer = (row * size + col) * 4;
-      pixels[pointer] = clampByte(166 * warm);
-      pixels[pointer + 1] = clampByte(156 * (0.94 + tone * 0.18));
-      pixels[pointer + 2] = clampByte(145 * coolShadow);
+      pixels[pointer] = value;
+      pixels[pointer + 1] = value;
+      pixels[pointer + 2] = value;
       pixels[pointer + 3] = 255;
     }
   }
@@ -705,10 +878,6 @@ function normalize(vector) {
   return vector.map((value) => value / length);
 }
 
-function dot(a, b) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
 function mix(a, b, t) {
   return a + (b - a) * t;
 }
@@ -719,6 +888,11 @@ function clampByte(value) {
 
 function degreesToRadians(value) {
   return (value * Math.PI) / 180;
+}
+
+function normalizePositiveEastLongitude(value) {
+  const wrapped = value % 360;
+  return wrapped < 0 ? wrapped + 360 : wrapped;
 }
 
 function clamp01(value) {

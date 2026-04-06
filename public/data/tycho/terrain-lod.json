@@ -1,10 +1,10 @@
 {
-  "textureLow": "/data/tycho/relief-low.png",
-  "textureHigh": "/data/tycho/relief-high.png",
+  "albedoLow": "/data/tycho/albedo-low.png",
+  "albedoHigh": "/data/tycho/albedo-high.png",
   "detailOverlay": {
     "texture": "/data/tycho/detail-albedo.png",
-    "repeat": 54,
-    "strength": 0.68
+    "repeat": 66,
+    "strength": 0.26
   },
   "levels": [
     {

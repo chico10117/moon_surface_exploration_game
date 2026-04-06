@@ -32,9 +32,17 @@
     "z": 0
   },
   "source": {
-    "dataset": "PDS LOLA LDEM_64 JP2",
-    "citation": "Official LOLA GDR global DEM from the PDS Geosciences Node. JP2 crop samples are decoded from unsigned TIFF output via (value - 32768) * 0.5 meters.",
-    "sourceUrl": "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/jp2/ldem_64.jp2"
+    "topography": {
+      "dataset": "PDS LOLA LDEM_64 JP2",
+      "citation": "Official LOLA GDR global DEM from the PDS Geosciences Node. JP2 crop samples are decoded from unsigned TIFF output via (value - 32768) * 0.5 meters.",
+      "sourceUrl": "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/jp2/ldem_64.jp2"
+    },
+    "albedo": {
+      "dataset": "LROC WAC Empirically Normalized 3-band mosaic",
+      "citation": "Official 64 px/deg LROC WAC 3-band RGB empirically normalized mosaic (R=689 nm, G=415 nm, B=321 nm), cropped to the Tycho survey window.",
+      "sourceUrl": "https://pds.lroc.im-ldi.com/data/LRO-L-LROC-5-RDR-V1.0/LROLRC_2001/DATA/MDR/WAC_EMP/WAC_EMP_3BAND_E300S3150_064P.TIF",
+      "productId": "WAC_EMP_3BAND_E300S3150_064P"
+    }
   },
   "sunPresets": {
     "dawn": {
