@@ -1,10 +1,20 @@
 {
   "albedoLow": "/data/tycho/albedo-low.png",
   "albedoHigh": "/data/tycho/albedo-high.png",
-  "detailOverlay": {
-    "texture": "/data/tycho/detail-albedo.png",
-    "repeat": 66,
-    "strength": 0.26
+  "macroNormalLow": "/data/tycho/macro-normal-low.png",
+  "macroNormalHigh": "/data/tycho/macro-normal-high.png",
+  "macroOcclusionLow": "/data/tycho/macro-occlusion-low.png",
+  "macroOcclusionHigh": "/data/tycho/macro-occlusion-high.png",
+  "detailAlbedo": "/data/tycho/detail-albedo.png",
+  "detailNormal": "/data/tycho/detail-normal.png",
+  "materialTuning": {
+    "macroNormalStrength": 0.58,
+    "occlusionStrength": 0.12,
+    "detailAlbedoStrength": 0.12,
+    "detailNormalStrength": 0.16,
+    "detailNearRepeat": 0.085,
+    "detailFarRepeat": 0.022,
+    "triplanarBlendSharpness": 5.2
   },
   "levels": [
     {

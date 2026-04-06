@@ -82,20 +82,43 @@ await mkdir(path.join(OUTPUT_DIR, 'detail'), { recursive: true });
 const topographySource = await loadOrGenerateTopographySource();
 const { width, height } = topographySource;
 const decodedHeights = topographySource.heights;
+const metersPerSampleX = world.widthMeters / (width - 1);
+const metersPerSampleZ = world.heightMeters / (height - 1);
 const albedoSource = await loadOrGenerateAlbedoSource(
   decodedHeights,
   width,
   height,
-  world.widthMeters / (width - 1),
-  world.heightMeters / (height - 1),
+  metersPerSampleX,
+  metersPerSampleZ,
+);
+const macroNormalTexture = makeMacroNormalTexture(
+  decodedHeights,
+  width,
+  height,
+  metersPerSampleX,
+  metersPerSampleZ,
+);
+const macroOcclusionTexture = makeMacroOcclusionTexture(
+  decodedHeights,
+  width,
+  height,
+  metersPerSampleX,
+  metersPerSampleZ,
 );
 const lowHeights = downsample(decodedHeights, width, height, 4);
 const lowAlbedo = downsampleTexture(albedoSource.texture, 4);
-const detailTexture = makeDetailTexture(1024);
+const lowMacroNormal = downsampleNormalTexture(macroNormalTexture, 4);
+const lowMacroOcclusion = downsampleTexture(macroOcclusionTexture, 4);
+const detailSurface = makeDetailSurface(1024);
 
 await writePng(path.join(OUTPUT_DIR, 'albedo-high.png'), albedoSource.texture);
 await writePng(path.join(OUTPUT_DIR, 'albedo-low.png'), lowAlbedo);
-await writePng(path.join(OUTPUT_DIR, 'detail-albedo.png'), detailTexture);
+await writePng(path.join(OUTPUT_DIR, 'macro-normal-high.png'), macroNormalTexture);
+await writePng(path.join(OUTPUT_DIR, 'macro-normal-low.png'), lowMacroNormal);
+await writePng(path.join(OUTPUT_DIR, 'macro-occlusion-high.png'), macroOcclusionTexture);
+await writePng(path.join(OUTPUT_DIR, 'macro-occlusion-low.png'), lowMacroOcclusion);
+await writePng(path.join(OUTPUT_DIR, 'detail-albedo.png'), detailSurface.albedo);
+await writePng(path.join(OUTPUT_DIR, 'detail-normal.png'), detailSurface.normal);
 
 const tileManifest = buildTileManifest();
 await writeTiles(
@@ -130,6 +153,7 @@ const siteManifest = {
   id: SITE.id,
   title: SITE.title,
   description: SITE.description,
+  defaultSunPreset: 'survey',
   boundsDegrees: bounds,
   world: {
     widthMeters: world.widthMeters,
@@ -139,8 +163,8 @@ const siteManifest = {
     meanHeightMeters: heightSum / decodedHeights.length,
     widthSamples: width,
     heightSamples: height,
-    metersPerSampleX: world.widthMeters / (width - 1),
-    metersPerSampleZ: world.heightMeters / (height - 1),
+    metersPerSampleX,
+    metersPerSampleZ,
   },
   grid: SITE.grid,
   spawn: withHeight(
@@ -156,6 +180,7 @@ const siteManifest = {
   sunPresets: {
     dawn: { azimuthDegrees: 128, elevationDegrees: 8 },
     noon: { azimuthDegrees: 158, elevationDegrees: 27 },
+    survey: { azimuthDegrees: 184, elevationDegrees: 22 },
     lowAngle: { azimuthDegrees: 194, elevationDegrees: 5 },
   },
 };
@@ -163,10 +188,20 @@ const siteManifest = {
 const terrainManifest = {
   albedoLow: '/data/tycho/albedo-low.png',
   albedoHigh: '/data/tycho/albedo-high.png',
-  detailOverlay: {
-    texture: '/data/tycho/detail-albedo.png',
-    repeat: 66,
-    strength: 0.26,
+  macroNormalLow: '/data/tycho/macro-normal-low.png',
+  macroNormalHigh: '/data/tycho/macro-normal-high.png',
+  macroOcclusionLow: '/data/tycho/macro-occlusion-low.png',
+  macroOcclusionHigh: '/data/tycho/macro-occlusion-high.png',
+  detailAlbedo: '/data/tycho/detail-albedo.png',
+  detailNormal: '/data/tycho/detail-normal.png',
+  materialTuning: {
+    macroNormalStrength: 0.58,
+    occlusionStrength: 0.12,
+    detailAlbedoStrength: 0.12,
+    detailNormalStrength: 0.16,
+    detailNearRepeat: 0.085,
+    detailFarRepeat: 0.022,
+    triplanarBlendSharpness: 5.2,
   },
   levels: [
     { id: 'boot', samplesX: SITE.bootSamplesPerTile.x, samplesZ: SITE.bootSamplesPerTile.z },
@@ -602,6 +637,54 @@ function downsample(values, width, height, factor) {
   };
 }
 
+function makeMacroNormalTexture(values, width, height, stepX, stepZ) {
+  const pixels = new Uint8Array(width * height * 4);
+
+  for (let row = 0; row < height; row += 1) {
+    for (let col = 0; col < width; col += 1) {
+      const normal = sampleTerrainNormal(values, width, height, col, row, stepX, stepZ);
+      const pointer = (row * width + col) * 4;
+      writeEncodedNormal(pixels, pointer, normal);
+    }
+  }
+
+  return {
+    width,
+    height,
+    pixels,
+  };
+}
+
+function makeMacroOcclusionTexture(values, width, height, stepX, stepZ) {
+  const pixels = new Uint8Array(width * height * 4);
+
+  for (let row = 0; row < height; row += 1) {
+    for (let col = 0; col < width; col += 1) {
+      const center = values[row * width + col];
+      const normal = sampleTerrainNormal(values, width, height, col, row, stepX, stepZ);
+      const slope = clamp01(1 - normal[1]);
+      const immediateMean = sampleNeighborhoodMean(values, width, height, col, row, 1);
+      const broadMean = sampleNeighborhoodMean(values, width, height, col, row, 3);
+      const cavity = clamp01((immediateMean - center) / 180);
+      const basin = clamp01((broadMean - center) / 260);
+      const exposure = clamp01((center - broadMean) / 320);
+      const occlusion = clamp01(0.97 - slope * 0.34 - cavity * 0.26 - basin * 0.18 + exposure * 0.08);
+      const value = clampByte(mix(86, 255, occlusion));
+      const pointer = (row * width + col) * 4;
+      pixels[pointer] = value;
+      pixels[pointer + 1] = value;
+      pixels[pointer + 2] = value;
+      pixels[pointer + 3] = 255;
+    }
+  }
+
+  return {
+    width,
+    height,
+    pixels,
+  };
+}
+
 function downsampleTexture(texture, factor) {
   const downWidth = Math.floor((texture.width - 1) / factor) + 1;
   const downHeight = Math.floor((texture.height - 1) / factor) + 1;
@@ -609,15 +692,72 @@ function downsampleTexture(texture, factor) {
 
   for (let row = 0; row < downHeight; row += 1) {
     for (let col = 0; col < downWidth; col += 1) {
-      const sourceX = Math.min(texture.width - 1, col * factor);
-      const sourceY = Math.min(texture.height - 1, row * factor);
-      const sourcePointer = (sourceY * texture.width + sourceX) * 4;
       const targetPointer = (row * downWidth + col) * 4;
+      const sourceX0 = col * factor;
+      const sourceY0 = row * factor;
+      const sourceX1 = Math.min(texture.width - 1, sourceX0 + factor - 1);
+      const sourceY1 = Math.min(texture.height - 1, sourceY0 + factor - 1);
 
-      pixels[targetPointer] = texture.pixels[sourcePointer];
-      pixels[targetPointer + 1] = texture.pixels[sourcePointer + 1];
-      pixels[targetPointer + 2] = texture.pixels[sourcePointer + 2];
-      pixels[targetPointer + 3] = texture.pixels[sourcePointer + 3];
+      let sumR = 0;
+      let sumG = 0;
+      let sumB = 0;
+      let sumA = 0;
+      let sampleCount = 0;
+      for (let sourceY = sourceY0; sourceY <= sourceY1; sourceY += 1) {
+        for (let sourceX = sourceX0; sourceX <= sourceX1; sourceX += 1) {
+          const sourcePointer = (sourceY * texture.width + sourceX) * 4;
+          sumR += texture.pixels[sourcePointer];
+          sumG += texture.pixels[sourcePointer + 1];
+          sumB += texture.pixels[sourcePointer + 2];
+          sumA += texture.pixels[sourcePointer + 3];
+          sampleCount += 1;
+        }
+      }
+
+      pixels[targetPointer] = clampByte(sumR / sampleCount);
+      pixels[targetPointer + 1] = clampByte(sumG / sampleCount);
+      pixels[targetPointer + 2] = clampByte(sumB / sampleCount);
+      pixels[targetPointer + 3] = clampByte(sumA / sampleCount);
+    }
+  }
+
+  return {
+    width: downWidth,
+    height: downHeight,
+    pixels,
+  };
+}
+
+function downsampleNormalTexture(texture, factor) {
+  const downWidth = Math.floor((texture.width - 1) / factor) + 1;
+  const downHeight = Math.floor((texture.height - 1) / factor) + 1;
+  const pixels = new Uint8Array(downWidth * downHeight * 4);
+
+  for (let row = 0; row < downHeight; row += 1) {
+    for (let col = 0; col < downWidth; col += 1) {
+      const targetPointer = (row * downWidth + col) * 4;
+      const sourceX0 = col * factor;
+      const sourceY0 = row * factor;
+      const sourceX1 = Math.min(texture.width - 1, sourceX0 + factor - 1);
+      const sourceY1 = Math.min(texture.height - 1, sourceY0 + factor - 1);
+      let sumX = 0;
+      let sumY = 0;
+      let sumZ = 0;
+
+      for (let sourceY = sourceY0; sourceY <= sourceY1; sourceY += 1) {
+        for (let sourceX = sourceX0; sourceX <= sourceX1; sourceX += 1) {
+          const sourcePointer = (sourceY * texture.width + sourceX) * 4;
+          sumX += texture.pixels[sourcePointer] / 255 * 2 - 1;
+          sumY += texture.pixels[sourcePointer + 1] / 255 * 2 - 1;
+          sumZ += texture.pixels[sourcePointer + 2] / 255 * 2 - 1;
+        }
+      }
+
+      writeEncodedNormal(
+        pixels,
+        targetPointer,
+        normalize([sumX, sumY, sumZ]),
+      );
     }
   }
 
@@ -674,8 +814,8 @@ function makeFallbackAlbedoTexture(values, width, height, stepX, stepZ) {
   };
 }
 
-function makeDetailTexture(size) {
-  const pixels = new Uint8Array(size * size * 4);
+function makeDetailSurface(size) {
+  const detailHeights = new Float32Array(size * size);
   const craterSeeds = Array.from({ length: 96 }, (_, index) => ({
     x: fract(Math.sin(index * 91.17 + 0.71) * 43758.5453),
     y: fract(Math.sin(index * 53.91 + 1.31) * 12741.381),
@@ -709,22 +849,44 @@ function makeDetailTexture(size) {
         Math.sin((u * 0.72 + v * 1.28) * Math.PI * 24) * 0.07 +
         Math.sin((u * 1.9 - v * 0.42) * Math.PI * 18) * 0.06 +
         Math.cos((u * 0.4 + v * 2.05) * Math.PI * 42) * 0.04;
-      const tone = clamp01(0.5 + micro + rays);
-      const grain = 0.68 + tone * 0.42;
-      const value = clampByte(132 + grain * 78);
+      detailHeights[row * size + col] = micro + rays;
+    }
+  }
 
-      const pointer = (row * size + col) * 4;
-      pixels[pointer] = value;
-      pixels[pointer + 1] = value;
-      pixels[pointer + 2] = value;
-      pixels[pointer + 3] = 255;
+  const albedoPixels = new Uint8Array(size * size * 4);
+  const normalPixels = new Uint8Array(size * size * 4);
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      const index = row * size + col;
+      const tone = clamp01(0.5 + detailHeights[index]);
+      const grain = 0.64 + tone * 0.34;
+      const value = clampByte(116 + grain * 64);
+      const pointer = index * 4;
+      albedoPixels[pointer] = value;
+      albedoPixels[pointer + 1] = value;
+      albedoPixels[pointer + 2] = clampByte(value + 4);
+      albedoPixels[pointer + 3] = 255;
+
+      const left = detailHeights[row * size + wrapIndex(col - 1, size)];
+      const right = detailHeights[row * size + wrapIndex(col + 1, size)];
+      const lower = detailHeights[wrapIndex(row - 1, size) * size + col];
+      const upper = detailHeights[wrapIndex(row + 1, size) * size + col];
+      const normal = normalize([-(right - left) * 1.75, 1, -(upper - lower) * 1.75]);
+      writeEncodedNormal(normalPixels, pointer, normal);
     }
   }
 
   return {
-    width: size,
-    height: size,
-    pixels,
+    albedo: {
+      width: size,
+      height: size,
+      pixels: albedoPixels,
+    },
+    normal: {
+      width: size,
+      height: size,
+      pixels: normalPixels,
+    },
   };
 }
 
@@ -873,8 +1035,45 @@ async function writeJson(destination, payload) {
   await writeFile(destination, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
+function sampleTerrainNormal(values, width, height, col, row, stepX, stepZ) {
+  const left = values[row * width + clampIndex(col - 1, width)];
+  const right = values[row * width + clampIndex(col + 1, width)];
+  const lower = values[clampIndex(row - 1, height) * width + col];
+  const upper = values[clampIndex(row + 1, height) * width + col];
+  const dx = (right - left) / (2 * stepX);
+  const dz = (upper - lower) / (2 * stepZ);
+  return normalize([-dx, 1, -dz]);
+}
+
+function sampleNeighborhoodMean(values, width, height, col, row, radius) {
+  let sum = 0;
+  let sampleCount = 0;
+
+  for (let rowOffset = -radius; rowOffset <= radius; rowOffset += 1) {
+    for (let colOffset = -radius; colOffset <= radius; colOffset += 1) {
+      if (rowOffset === 0 && colOffset === 0) {
+        continue;
+      }
+
+      const sampleCol = clampIndex(col + colOffset, width);
+      const sampleRow = clampIndex(row + rowOffset, height);
+      sum += values[sampleRow * width + sampleCol];
+      sampleCount += 1;
+    }
+  }
+
+  return sampleCount > 0 ? sum / sampleCount : values[row * width + col];
+}
+
+function writeEncodedNormal(target, pointer, normal) {
+  target[pointer] = clampByte((normal[0] * 0.5 + 0.5) * 255);
+  target[pointer + 1] = clampByte((normal[1] * 0.5 + 0.5) * 255);
+  target[pointer + 2] = clampByte((normal[2] * 0.5 + 0.5) * 255);
+  target[pointer + 3] = 255;
+}
+
 function normalize(vector) {
-  const length = Math.hypot(...vector);
+  const length = Math.hypot(...vector) || 1;
   return vector.map((value) => value / length);
 }
 
@@ -906,4 +1105,13 @@ function fract(value) {
 function torusDistance(a, b) {
   const delta = Math.abs(a - b);
   return Math.min(delta, 1 - delta);
+}
+
+function clampIndex(index, size) {
+  return Math.max(0, Math.min(size - 1, index));
+}
+
+function wrapIndex(index, size) {
+  const wrapped = index % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
 }

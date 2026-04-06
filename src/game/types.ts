@@ -10,6 +10,7 @@ export interface SiteManifest {
   id: string;
   title: string;
   description: string;
+  defaultSunPreset?: string;
   boundsDegrees: {
     lonMin: number;
     lonMax: number;
@@ -80,10 +81,20 @@ export interface TerrainLevelManifest {
 export interface TerrainLodManifest {
   albedoLow: string;
   albedoHigh: string;
-  detailOverlay?: {
-    texture: string;
-    repeat: number;
-    strength: number;
+  macroNormalLow: string;
+  macroNormalHigh: string;
+  macroOcclusionLow: string;
+  macroOcclusionHigh: string;
+  detailAlbedo: string;
+  detailNormal: string;
+  materialTuning: {
+    macroNormalStrength: number;
+    occlusionStrength: number;
+    detailAlbedoStrength: number;
+    detailNormalStrength: number;
+    detailNearRepeat: number;
+    detailFarRepeat: number;
+    triplanarBlendSharpness: number;
   };
   levels: TerrainLevelManifest[];
   tiles: TerrainTileManifest[];

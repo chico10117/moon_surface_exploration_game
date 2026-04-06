@@ -2,6 +2,7 @@
   "id": "tycho",
   "title": "Tycho Survey Corridor",
   "description": "A rover-first geology survey slice on measured lunar terrain centered on Tycho crater.",
+  "defaultSunPreset": "survey",
   "boundsDegrees": {
     "lonMin": -14.86,
     "lonMax": -7.859999999999999,
@@ -52,6 +53,10 @@
     "noon": {
       "azimuthDegrees": 158,
       "elevationDegrees": 27
+    },
+    "survey": {
+      "azimuthDegrees": 184,
+      "elevationDegrees": 22
     },
     "lowAngle": {
       "azimuthDegrees": 194,

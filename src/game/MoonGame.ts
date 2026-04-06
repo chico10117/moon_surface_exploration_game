@@ -42,6 +42,21 @@ interface DroneThrusterState {
   material: THREE.MeshStandardMaterial;
   light: THREE.PointLight;
   kind: 'lift' | 'aft';
+  phaseOffset: number;
+}
+
+interface DroneMaterialSet {
+  shell: THREE.MeshStandardMaterial;
+  structure: THREE.MeshStandardMaterial;
+  accent: THREE.MeshStandardMaterial;
+  lens: THREE.MeshStandardMaterial;
+  glow: THREE.MeshStandardMaterial;
+}
+
+interface RoverClearanceProbe {
+  localX: number;
+  localY: number;
+  localZ: number;
 }
 
 const ROVER_DIMENSIONS = {
@@ -89,9 +104,22 @@ const ROVER_DIMENSIONS = {
 };
 
 const DRONE_DIMENSIONS = {
-  bodyLength: 2.6,
-  bodyWidth: 2.2,
-  bodyHeight: 0.62,
+  fuselageLength: 2.36,
+  fuselageWidth: 0.92,
+  fuselageHeight: 0.44,
+  podOffsetX: 1.26,
+  podOffsetFrontZ: 0.74,
+  podOffsetRearZ: -0.58,
+  podRadius: 0.38,
+  podHeight: 0.26,
+  skidOffsetX: 0.56,
+  skidY: -0.58,
+  skidLength: 1.76,
+  sensorNoseZ: 1.52,
+  tailBoomZ: -1.56,
+  tailBoomLength: 1.14,
+  aftExhaustOffsetX: 0.3,
+  aftExhaustZ: -2.18,
   cameraTargetHeight: 2.4,
   cameraDistance: 56,
 };
@@ -153,11 +181,56 @@ const CAMERA_ZOOM_CONFIG: Record<
   },
 };
 
+const ROVER_CLEARANCE = {
+  minBodyClearanceMeters: 0.22,
+  maxLiftMeters: 1.25,
+  settleResponse: 5.6,
+  sampleRadiusMeters: 0.95,
+};
+
+const ROVER_CLEARANCE_PROBES: RoverClearanceProbe[] = [
+  { localX: -0.92, localY: 0.46, localZ: -1.08 },
+  { localX: 0, localY: 0.46, localZ: -1.08 },
+  { localX: 0.92, localY: 0.46, localZ: -1.08 },
+  { localX: -0.92, localY: 0.46, localZ: 0 },
+  { localX: 0, localY: 0.46, localZ: 0 },
+  { localX: 0.92, localY: 0.46, localZ: 0 },
+  { localX: -0.92, localY: 0.46, localZ: 1.08 },
+  { localX: 0, localY: 0.46, localZ: 1.08 },
+  { localX: 0.92, localY: 0.46, localZ: 1.08 },
+  { localX: -1.28, localY: 0.52, localZ: -1.36 },
+  { localX: 1.28, localY: 0.52, localZ: -1.36 },
+  { localX: -1.38, localY: 0.52, localZ: 0 },
+  { localX: 1.38, localY: 0.52, localZ: 0 },
+  { localX: -1.28, localY: 0.52, localZ: 1.36 },
+  { localX: 1.28, localY: 0.52, localZ: 1.36 },
+  { localX: -1.08, localY: 0.72, localZ: 2.12 },
+  { localX: 0, localY: 0.72, localZ: 2.12 },
+  { localX: 1.08, localY: 0.72, localZ: 2.12 },
+  { localX: -1.08, localY: 0.72, localZ: -2.02 },
+  { localX: 0, localY: 0.72, localZ: -2.02 },
+  { localX: 1.08, localY: 0.72, localZ: -2.02 },
+];
+
+const ROVER_CLEARANCE_SAMPLE_OFFSETS: Array<[number, number]> = [
+  [0, 0],
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [0.7, 0.7],
+  [-0.7, 0.7],
+  [0.7, -0.7],
+  [-0.7, -0.7],
+];
+
 export class MoonGame {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(52, 1, 0.1, 400000);
   private readonly clock = new THREE.Clock();
+  private readonly ambientLight = new THREE.AmbientLight('#d9dfe6', 0.26);
+  private readonly sunLight = new THREE.DirectionalLight('#fff8f1', 2.6);
   private readonly input = new InputController();
   private readonly hud: HudController;
   private readonly bindings: GameBindings;
@@ -201,6 +274,7 @@ export class MoonGame {
   private steerVisualRadians = 0;
   private dronePitchRadians = 0;
   private droneRollRadians = 0;
+  private roverClearanceLiftMeters = 0;
   private readonly cameraZoomScaleByMode: Record<VehicleMode, number> = {
     rover: 1,
     drone: 1,
@@ -219,6 +293,8 @@ export class MoonGame {
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.16;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -241,7 +317,12 @@ export class MoonGame {
 
     const terrainSystem = new TerrainSystem(this.scene, siteData.site, siteData.terrain);
     await terrainSystem.initialize();
+    await terrainSystem.warmStart(
+      new THREE.Vector3(siteData.site.spawn.x, siteData.site.spawn.y, siteData.site.spawn.z),
+      1,
+    );
     this.terrainSystem = terrainSystem;
+    this.applySunPreset(siteData.site.defaultSunPreset ?? 'survey');
 
     const missionController = new MissionController(siteData.mission);
     this.missionController = missionController;
@@ -263,20 +344,20 @@ export class MoonGame {
   };
 
   private setupSceneScaffold(): void {
-    const ambient = new THREE.AmbientLight('#c7cdd4', 0.1);
-    this.scene.add(ambient);
+    this.scene.add(this.ambientLight);
 
-    const sun = new THREE.DirectionalLight('#fff8f1', 2.4);
-    sun.position.set(-28000, 56000, -22000);
-    sun.castShadow = true;
-    sun.shadow.mapSize.setScalar(2048);
-    sun.shadow.camera.near = 500;
-    sun.shadow.camera.far = 120000;
-    sun.shadow.camera.left = -30000;
-    sun.shadow.camera.right = 30000;
-    sun.shadow.camera.top = 30000;
-    sun.shadow.camera.bottom = -30000;
-    this.scene.add(sun);
+    this.sunLight.position.set(-82000, 11000, -21000);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.setScalar(3072);
+    this.sunLight.shadow.camera.near = 400;
+    this.sunLight.shadow.camera.far = 150000;
+    this.sunLight.shadow.camera.left = -36000;
+    this.sunLight.shadow.camera.right = 36000;
+    this.sunLight.shadow.camera.top = 36000;
+    this.sunLight.shadow.camera.bottom = -36000;
+    this.sunLight.shadow.bias = -0.00008;
+    this.sunLight.shadow.normalBias = 0.45;
+    this.scene.add(this.sunLight);
 
     const starGeometry = new THREE.BufferGeometry();
     const starCount = 900;
@@ -296,6 +377,35 @@ export class MoonGame {
       new THREE.PointsMaterial({ color: '#dfe9ff', size: 110, sizeAttenuation: true }),
     );
     this.scene.add(stars);
+  }
+
+  private applySunPreset(presetName: string): void {
+    if (!this.siteData) {
+      return;
+    }
+
+    const preset =
+      this.siteData.site.sunPresets[presetName] ??
+      this.siteData.site.sunPresets.survey ??
+      this.siteData.site.sunPresets.lowAngle ??
+      this.siteData.site.sunPresets.noon;
+    if (!preset) {
+      return;
+    }
+
+    const azimuthRadians = THREE.MathUtils.degToRad(preset.azimuthDegrees);
+    const elevationRadians = THREE.MathUtils.degToRad(preset.elevationDegrees);
+    const lightRadius = Math.max(
+      this.siteData.site.world.widthMeters,
+      this.siteData.site.world.heightMeters,
+    ) * 0.58;
+    const horizontalRadius = lightRadius * Math.cos(elevationRadians);
+
+    this.sunLight.position.set(
+      Math.cos(azimuthRadians) * horizontalRadius,
+      Math.sin(elevationRadians) * lightRadius,
+      Math.sin(azimuthRadians) * horizontalRadius,
+    );
   }
 
   private setupCameraControls(canvas: HTMLCanvasElement): void {
@@ -871,140 +981,481 @@ export class MoonGame {
   }
 
   private setupDrone(): void {
-    const shellMaterial = new THREE.MeshStandardMaterial({
-      color: '#c8d0d7',
-      roughness: 0.58,
-      metalness: 0.2,
-    });
-    const darkMaterial = new THREE.MeshStandardMaterial({
-      color: '#252d36',
-      roughness: 0.86,
-      metalness: 0.18,
-    });
-    const trimMaterial = new THREE.MeshStandardMaterial({
-      color: '#82d1f4',
-      emissive: '#21465f',
-      emissiveIntensity: 0.34,
-      roughness: 0.32,
-      metalness: 0.35,
-    });
-    const glassMaterial = new THREE.MeshStandardMaterial({
-      color: '#dff5ff',
-      roughness: 0.05,
-      metalness: 0.08,
-      transparent: true,
-      opacity: 0.72,
-    });
+    const materials = this.createDroneMaterials();
 
     this.droneThrusters.length = 0;
+    this.drone.clear();
+    this.droneTiltPivot.clear();
+    this.droneTiltPivot.position.set(0, 0, 0);
+    this.droneTiltPivot.rotation.set(0, 0, 0);
 
-    const fuselage = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        DRONE_DIMENSIONS.bodyWidth,
-        DRONE_DIMENSIONS.bodyHeight,
-        DRONE_DIMENSIONS.bodyLength,
-      ),
-      shellMaterial,
-    );
-    fuselage.castShadow = true;
-    fuselage.receiveShadow = true;
-    this.droneTiltPivot.add(fuselage);
-
-    const dorsalSpine = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.24, 1.6), darkMaterial);
-    dorsalSpine.position.set(0, 0.36, 0.06);
-    dorsalSpine.castShadow = true;
-    this.droneTiltPivot.add(dorsalSpine);
-
-    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.28, 0.8), glassMaterial);
-    cockpit.position.set(0, 0.24, 0.72);
-    cockpit.castShadow = true;
-    this.droneTiltPivot.add(cockpit);
-
-    const sensorSkid = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.1, 0.5), darkMaterial);
-    sensorSkid.position.set(0, -0.36, 0.74);
-    sensorSkid.castShadow = true;
-    this.droneTiltPivot.add(sensorSkid);
-
-    const sensorBar = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.08, 0.14), trimMaterial);
-    sensorBar.position.set(0, 0.08, 1.16);
-    sensorBar.castShadow = true;
-    this.droneTiltPivot.add(sensorBar);
-
-    const aftBoom = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 1.26), darkMaterial);
-    aftBoom.position.set(0, 0.02, -1.4);
-    aftBoom.castShadow = true;
-    this.droneTiltPivot.add(aftBoom);
-
-    for (const side of [-1, 1] as const) {
-      const wing = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.12, 1.84), shellMaterial);
-      wing.position.set(side * 1.08, -0.02, -0.08);
-      wing.rotation.z = side * 0.14;
-      wing.castShadow = true;
-      this.droneTiltPivot.add(wing);
-
-      const wingTip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.4, 0.32), darkMaterial);
-      wingTip.position.set(side * 1.55, 0.06, -0.74);
-      wingTip.castShadow = true;
-      this.droneTiltPivot.add(wingTip);
-
-      const navLightMaterial = new THREE.MeshStandardMaterial({
-        color: side < 0 ? '#8edff8' : '#ffb16f',
-        emissive: side < 0 ? '#8edff8' : '#ffb16f',
-        emissiveIntensity: 0.85,
-        roughness: 0.28,
-        metalness: 0.18,
-      });
-      const navLight = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 12), navLightMaterial);
-      navLight.position.set(side * 1.62, 0.1, -0.74);
-      navLight.castShadow = true;
-      this.droneTiltPivot.add(navLight);
-    }
-
-    const buildThruster = (
-      position: THREE.Vector3,
-      rotationX: number,
-      color: THREE.ColorRepresentation,
-      kind: 'lift' | 'aft',
-    ): void => {
-      const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.38, 18), darkMaterial);
-      nozzle.position.copy(position);
-      nozzle.rotation.x = rotationX;
-      nozzle.castShadow = true;
-      this.droneTiltPivot.add(nozzle);
-
-      const glowMaterial = new THREE.MeshStandardMaterial({
-        color,
-        emissive: color,
-        emissiveIntensity: 0.6,
-        transparent: true,
-        opacity: 0.78,
-        roughness: 0.2,
-        metalness: 0,
-      });
-      const glow = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.46, 16), glowMaterial);
-      glow.position.copy(position);
-      glow.rotation.x = rotationX;
-      glow.translateY(-0.36);
-      this.droneTiltPivot.add(glow);
-
-      const light = new THREE.PointLight(color, 0.6, 36, 2.1);
-      light.position.copy(position);
-      light.position.add(
-        kind === 'lift' ? new THREE.Vector3(0, -0.28, 0) : new THREE.Vector3(0, 0, 0.28),
-      );
-      this.droneTiltPivot.add(light);
-
-      this.droneThrusters.push({ material: glowMaterial, light, kind });
-    };
-
-    buildThruster(new THREE.Vector3(-0.92, -0.18, -0.12), 0, '#74d6ff', 'lift');
-    buildThruster(new THREE.Vector3(0.92, -0.18, -0.12), 0, '#74d6ff', 'lift');
-    buildThruster(new THREE.Vector3(-0.54, -0.1, 0.92), Math.PI / 2, '#ffc477', 'aft');
-    buildThruster(new THREE.Vector3(0.54, -0.1, 0.92), Math.PI / 2, '#ffc477', 'aft');
+    this.buildDroneFuselage(materials);
+    this.buildDroneSensorNose(materials);
+    this.buildDroneLiftPods(materials);
+    this.buildDroneLandingSkids(materials);
+    this.buildDroneTail(materials);
 
     this.drone.add(this.droneTiltPivot);
     this.drone.visible = false;
-    this.scene.add(this.drone);
+    if (this.drone.parent !== this.scene) {
+      this.scene.add(this.drone);
+    }
+  }
+
+  private createDroneMaterials(): DroneMaterialSet {
+    return {
+      shell: new THREE.MeshStandardMaterial({
+        color: '#e6ecf0',
+        roughness: 0.44,
+        metalness: 0.28,
+      }),
+      structure: new THREE.MeshStandardMaterial({
+        color: '#1f2730',
+        roughness: 0.82,
+        metalness: 0.22,
+      }),
+      accent: new THREE.MeshStandardMaterial({
+        color: '#93e6ff',
+        emissive: '#1e6177',
+        emissiveIntensity: 0.42,
+        roughness: 0.24,
+        metalness: 0.34,
+      }),
+      lens: new THREE.MeshStandardMaterial({
+        color: '#d8f6ff',
+        emissive: '#5ecff6',
+        emissiveIntensity: 0.14,
+        roughness: 0.04,
+        metalness: 0.08,
+        transparent: true,
+        opacity: 0.84,
+      }),
+      glow: new THREE.MeshStandardMaterial({
+        color: '#a4eeff',
+        emissive: '#72e0ff',
+        emissiveIntensity: 0.78,
+        roughness: 0.18,
+        metalness: 0.12,
+      }),
+    };
+  }
+
+  private buildDroneFuselage(materials: DroneMaterialSet): void {
+    const fuselage = this.createDronePart(
+      new THREE.CylinderGeometry(0.34, 0.44, DRONE_DIMENSIONS.fuselageLength, 18),
+      materials.shell,
+      [0, 0.02, 0.02],
+      [Math.PI / 2, 0, 0],
+      true,
+    );
+    this.droneTiltPivot.add(fuselage);
+
+    const belly = this.createDronePart(
+      new THREE.BoxGeometry(DRONE_DIMENSIONS.fuselageWidth, 0.18, 1.84),
+      materials.structure,
+      [0, -0.18, -0.04],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(belly);
+
+    const shoulder = this.createDronePart(
+      new THREE.BoxGeometry(1.34, 0.08, 0.66),
+      materials.shell,
+      [0, 0.02, 0.08],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(shoulder);
+
+    const dorsalSpine = this.createDronePart(
+      new THREE.BoxGeometry(0.46, 0.16, 1.82),
+      materials.structure,
+      [0, 0.25, 0.02],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(dorsalSpine);
+
+    const topFairing = this.createDronePart(
+      new THREE.CylinderGeometry(0.1, 0.18, 0.76, 16),
+      materials.shell,
+      [0, 0.18, 0.72],
+      [Math.PI / 2, 0, 0],
+      true,
+    );
+    this.droneTiltPivot.add(topFairing);
+
+    const noseCap = this.createDronePart(
+      new THREE.ConeGeometry(0.22, 0.52, 18),
+      materials.shell,
+      [0, 0.04, 1.48],
+      [Math.PI / 2, 0, 0],
+      true,
+    );
+    this.droneTiltPivot.add(noseCap);
+
+    for (const side of [-1, 1] as const) {
+      const chine = this.createDronePart(
+        new THREE.BoxGeometry(0.08, 0.1, 1.34),
+        materials.structure,
+        [side * 0.38, -0.02, 0.04],
+        [0, 0, side * 0.08],
+        true,
+      );
+      this.droneTiltPivot.add(chine);
+
+      const strip = this.createDronePart(
+        new THREE.BoxGeometry(0.06, 0.04, 1.16),
+        materials.glow,
+        [side * 0.29, 0.08, 0.12],
+      );
+      this.droneTiltPivot.add(strip);
+    }
+  }
+
+  private buildDroneSensorNose(materials: DroneMaterialSet): void {
+    const sensorHousing = this.createDronePart(
+      new THREE.BoxGeometry(0.48, 0.16, 0.72),
+      materials.structure,
+      [0, -0.16, 1.04],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(sensorHousing);
+
+    const sensorChin = this.createDronePart(
+      new THREE.BoxGeometry(0.34, 0.12, 0.42),
+      materials.shell,
+      [0, -0.28, 1.42],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(sensorChin);
+
+    const visor = this.createDronePart(
+      new THREE.BoxGeometry(0.42, 0.04, 0.24),
+      materials.accent,
+      [0, 0.02, 1.06],
+    );
+    this.droneTiltPivot.add(visor);
+
+    const lensBar = this.createDronePart(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.34, 16),
+      materials.structure,
+      [0, -0.22, DRONE_DIMENSIONS.sensorNoseZ],
+      [0, 0, Math.PI / 2],
+      true,
+    );
+    this.droneTiltPivot.add(lensBar);
+
+    for (const side of [-1, 1] as const) {
+      const lens = this.createDronePart(
+        new THREE.CylinderGeometry(0.06, 0.075, 0.12, 16),
+        materials.lens,
+        [side * 0.14, -0.22, DRONE_DIMENSIONS.sensorNoseZ + 0.04],
+        [0, 0, Math.PI / 2],
+      );
+      this.droneTiltPivot.add(lens);
+
+      const rangeFinder = this.createDronePart(
+        new THREE.BoxGeometry(0.08, 0.08, 0.22),
+        materials.accent,
+        [side * 0.22, -0.1, 1.34],
+      );
+      this.droneTiltPivot.add(rangeFinder);
+    }
+  }
+
+  private buildDroneLiftPods(materials: DroneMaterialSet): void {
+    const podPositions = [
+      new THREE.Vector3(-DRONE_DIMENSIONS.podOffsetX, 0, DRONE_DIMENSIONS.podOffsetFrontZ),
+      new THREE.Vector3(DRONE_DIMENSIONS.podOffsetX, 0, DRONE_DIMENSIONS.podOffsetFrontZ),
+      new THREE.Vector3(-DRONE_DIMENSIONS.podOffsetX, 0, DRONE_DIMENSIONS.podOffsetRearZ),
+      new THREE.Vector3(DRONE_DIMENSIONS.podOffsetX, 0, DRONE_DIMENSIONS.podOffsetRearZ),
+    ];
+
+    for (const [index, podPosition] of podPositions.entries()) {
+      const side: -1 | 1 = podPosition.x < 0 ? -1 : 1;
+      const arm = this.createDronePart(
+        new THREE.BoxGeometry(0.68, 0.08, 0.18),
+        materials.shell,
+        [side * 0.78, 0.02, podPosition.z + (podPosition.z > 0 ? 0.04 : -0.02)],
+        [0, 0, side * -0.1],
+        true,
+      );
+      this.droneTiltPivot.add(arm);
+
+      const brace = this.createDronePart(
+        new THREE.BoxGeometry(0.12, 0.22, 0.12),
+        materials.structure,
+        [side * 1.01, -0.07, podPosition.z],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(brace);
+
+      const podShell = this.createDronePart(
+        new THREE.CylinderGeometry(
+          DRONE_DIMENSIONS.podRadius * 0.94,
+          DRONE_DIMENSIONS.podRadius,
+          DRONE_DIMENSIONS.podHeight,
+          24,
+          1,
+          true,
+        ),
+        materials.structure,
+        [podPosition.x, 0, podPosition.z],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(podShell);
+
+      const podTopRing = this.createDronePart(
+        new THREE.CylinderGeometry(
+          DRONE_DIMENSIONS.podRadius * 0.86,
+          DRONE_DIMENSIONS.podRadius * 0.9,
+          0.05,
+          24,
+        ),
+        materials.shell,
+        [podPosition.x, DRONE_DIMENSIONS.podHeight * 0.5 + 0.02, podPosition.z],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(podTopRing);
+
+      const podBottomRing = this.createDronePart(
+        new THREE.CylinderGeometry(
+          DRONE_DIMENSIONS.podRadius * 0.88,
+          DRONE_DIMENSIONS.podRadius * 0.84,
+          0.05,
+          24,
+        ),
+        materials.shell,
+        [podPosition.x, -DRONE_DIMENSIONS.podHeight * 0.5 - 0.02, podPosition.z],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(podBottomRing);
+
+      const hub = this.createDronePart(
+        new THREE.CylinderGeometry(0.13, 0.16, 0.12, 16),
+        materials.shell,
+        [podPosition.x, 0, podPosition.z],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(hub);
+
+      const intakeRing = this.createDronePart(
+        new THREE.TorusGeometry(DRONE_DIMENSIONS.podRadius * 0.74, 0.02, 8, 24),
+        materials.glow,
+        [podPosition.x, 0, podPosition.z],
+        [Math.PI / 2, 0, 0],
+      );
+      this.droneTiltPivot.add(intakeRing);
+
+      const sideAccent = this.createDronePart(
+        new THREE.BoxGeometry(0.04, 0.12, 0.16),
+        materials.glow,
+        [podPosition.x + side * 0.38, 0, podPosition.z],
+      );
+      this.droneTiltPivot.add(sideAccent);
+
+      this.registerDroneThruster(
+        new THREE.Vector3(podPosition.x, -0.08, podPosition.z),
+        '#78deff',
+        'lift',
+        index * 0.85,
+        materials.structure,
+      );
+    }
+  }
+
+  private buildDroneLandingSkids(materials: DroneMaterialSet): void {
+    for (const side of [-1, 1] as const) {
+      const rail = this.createDronePart(
+        new THREE.CylinderGeometry(0.04, 0.04, DRONE_DIMENSIONS.skidLength, 12),
+        materials.structure,
+        [side * DRONE_DIMENSIONS.skidOffsetX, DRONE_DIMENSIONS.skidY, 0.02],
+        [Math.PI / 2, 0, 0],
+        true,
+      );
+      this.droneTiltPivot.add(rail);
+
+      for (const z of [-0.46, 0.5]) {
+        const strut = this.createDronePart(
+          new THREE.CylinderGeometry(0.03, 0.03, 0.44, 10),
+          materials.shell,
+          [side * 0.44, -0.38, z],
+          [0, 0, side * 0.42],
+          true,
+        );
+        this.droneTiltPivot.add(strut);
+      }
+    }
+
+    const frontBrace = this.createDronePart(
+      new THREE.BoxGeometry(1.02, 0.05, 0.1),
+      materials.structure,
+      [0, -0.5, 0.5],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(frontBrace);
+
+    const rearBrace = this.createDronePart(
+      new THREE.BoxGeometry(0.92, 0.05, 0.1),
+      materials.structure,
+      [0, -0.5, -0.38],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(rearBrace);
+  }
+
+  private buildDroneTail(materials: DroneMaterialSet): void {
+    const boom = this.createDronePart(
+      new THREE.BoxGeometry(0.22, 0.16, DRONE_DIMENSIONS.tailBoomLength),
+      materials.structure,
+      [0, 0.04, DRONE_DIMENSIONS.tailBoomZ],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(boom);
+
+    const tailFairing = this.createDronePart(
+      new THREE.BoxGeometry(0.52, 0.08, 0.72),
+      materials.shell,
+      [0, 0.08, -1.92],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(tailFairing);
+
+    const fin = this.createDronePart(
+      new THREE.BoxGeometry(0.08, 0.4, 0.42),
+      materials.shell,
+      [0, 0.3, -1.92],
+      undefined,
+      true,
+    );
+    this.droneTiltPivot.add(fin);
+
+    const tailStrip = this.createDronePart(
+      new THREE.BoxGeometry(0.34, 0.04, 0.18),
+      materials.glow,
+      [0, 0.16, -1.72],
+    );
+    this.droneTiltPivot.add(tailStrip);
+
+    for (const side of [-1, 1] as const) {
+      const vane = this.createDronePart(
+        new THREE.BoxGeometry(0.06, 0.24, 0.5),
+        materials.shell,
+        [side * 0.26, 0.16, -1.96],
+        [0, 0, side * 0.62],
+        true,
+      );
+      this.droneTiltPivot.add(vane);
+
+      const exhaustFairing = this.createDronePart(
+        new THREE.BoxGeometry(0.22, 0.12, 0.34),
+        materials.shell,
+        [side * DRONE_DIMENSIONS.aftExhaustOffsetX, 0.02, -1.94],
+        undefined,
+        true,
+      );
+      this.droneTiltPivot.add(exhaustFairing);
+
+      const exhaustHousing = this.createDronePart(
+        new THREE.CylinderGeometry(0.1, 0.13, 0.24, 18),
+        materials.structure,
+        [side * DRONE_DIMENSIONS.aftExhaustOffsetX, -0.02, -2.04],
+        [Math.PI / 2, 0, 0],
+        true,
+      );
+      this.droneTiltPivot.add(exhaustHousing);
+
+      this.registerDroneThruster(
+        new THREE.Vector3(
+          side * DRONE_DIMENSIONS.aftExhaustOffsetX,
+          -0.02,
+          DRONE_DIMENSIONS.aftExhaustZ,
+        ),
+        '#ffd08a',
+        'aft',
+        3.4 + side * 0.9,
+        materials.structure,
+      );
+    }
+  }
+
+  private registerDroneThruster(
+    position: THREE.Vector3,
+    color: THREE.ColorRepresentation,
+    kind: 'lift' | 'aft',
+    phaseOffset: number,
+    nozzleMaterial: THREE.MeshStandardMaterial,
+  ): void {
+    const nozzle = this.createDronePart(
+      new THREE.CylinderGeometry(kind === 'lift' ? 0.09 : 0.08, 0.13, kind === 'lift' ? 0.16 : 0.28, 18),
+      nozzleMaterial,
+      [position.x, position.y, position.z],
+      kind === 'lift' ? undefined : [Math.PI / 2, 0, 0],
+      true,
+    );
+    this.droneTiltPivot.add(nozzle);
+
+    const glowMaterial = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: kind === 'lift' ? 0.68 : 0.42,
+      transparent: true,
+      opacity: kind === 'lift' ? 0.72 : 0.76,
+      roughness: 0.16,
+      metalness: 0,
+      depthWrite: false,
+    });
+    const glow = new THREE.Mesh(
+      new THREE.ConeGeometry(kind === 'lift' ? 0.12 : 0.1, kind === 'lift' ? 0.54 : 0.46, 18),
+      glowMaterial,
+    );
+    glow.position.copy(position);
+    if (kind === 'lift') {
+      glow.position.y -= 0.34;
+    } else {
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.z -= 0.28;
+    }
+    this.droneTiltPivot.add(glow);
+
+    const light = new THREE.PointLight(color, kind === 'lift' ? 0.78 : 0.42, kind === 'lift' ? 34 : 24, 2);
+    light.position.copy(position);
+    light.position.add(kind === 'lift' ? new THREE.Vector3(0, -0.26, 0) : new THREE.Vector3(0, 0, -0.26));
+    this.droneTiltPivot.add(light);
+
+    this.droneThrusters.push({ material: glowMaterial, light, kind, phaseOffset });
+  }
+
+  private createDronePart(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    position?: [number, number, number],
+    rotation?: [number, number, number],
+    receiveShadow = false,
+  ): THREE.Mesh {
+    const mesh = new THREE.Mesh(geometry, material);
+    if (position) {
+      mesh.position.set(position[0], position[1], position[2]);
+    }
+    if (rotation) {
+      mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+    }
+    mesh.castShadow = true;
+    mesh.receiveShadow = receiveShadow;
+    return mesh;
   }
 
   private beginRun(mode: VehicleMode): void {
@@ -1053,6 +1504,7 @@ export class MoonGame {
     this.steerVisualRadians = 0;
     this.dronePitchRadians = 0;
     this.droneRollRadians = 0;
+    this.roverClearanceLiftMeters = 0;
     this.cameraOrbitPitchRadians = mode === 'drone' ? DRONE_TUNING.orbitPitchRadians : 0.42;
     this.missionController.reset();
     this.hud.setVehicleMode(mode);
@@ -1119,7 +1571,7 @@ export class MoonGame {
     const throttleInput = this.input.getAxis('KeyS', 'KeyW');
     const steerInput = this.input.getAxis('KeyD', 'KeyA');
     const boost = this.input.isPressed('ShiftLeft') || this.input.isPressed('ShiftRight');
-    const climbInput = this.vehicleMode === 'drone' ? this.input.getAxis('KeyQ', 'Space') : 0;
+    const climbInput = this.vehicleMode === 'drone' ? this.input.getAxis('Space', 'KeyQ') : 0;
     const braking = this.vehicleMode === 'rover' && this.input.isPressed('Space');
     const scanHeld =
       this.vehicleMode === 'rover' &&
@@ -1130,7 +1582,11 @@ export class MoonGame {
       this.showVehicleSelector('selecting');
     }
 
-    this.terrainSystem.update(this.vehiclePosition, this.vehicleMode === 'drone' ? 2 : 1);
+    this.terrainSystem.update(
+      this.vehiclePosition,
+      deltaSeconds,
+      this.vehicleMode === 'drone' ? 2 : 1,
+    );
 
     const surfaceNormal = this.terrainSystem.sampleNormal(this.vehiclePosition.x, this.vehiclePosition.z);
     const slopeDegrees = THREE.MathUtils.radToDeg(
@@ -1175,7 +1631,7 @@ export class MoonGame {
         actionPrompt =
           this.batteryPercent < 18
             ? 'Ease off thrust or hover briefly to recover solar reserve.'
-            : 'Scout freely with W/S thrust, Space climb, Q descend, and press R to redeploy.';
+            : 'Scout freely with W/S thrust, Q climb, Space descend, and press R to redeploy.';
       }
     } else {
       if (this.vehicleMode === 'rover') {
@@ -1419,15 +1875,36 @@ export class MoonGame {
 
     this.droneTiltPivot.rotation.x = this.dronePitchRadians;
     this.droneTiltPivot.rotation.z = this.droneRollRadians;
-    this.droneTiltPivot.position.y = Math.sin(elapsed * 3.1) * 0.08;
+    this.droneTiltPivot.position.y = Math.sin(elapsed * 4.2) * 0.045;
 
     for (const thruster of this.droneThrusters) {
+      const shimmer =
+        thruster.kind === 'lift'
+          ? 0.04 + (Math.sin(elapsed * 18 + thruster.phaseOffset) + 1) * 0.03
+          : 0.03 + (Math.sin(elapsed * 22 + thruster.phaseOffset) + 1) * 0.025;
       const response =
         thruster.kind === 'lift'
-          ? 0.68 + speedFactor * 0.28 + Math.abs(climbInput) * 0.35 + (boost ? 0.12 : 0)
-          : 0.3 + Math.max(0, throttleInput) * 0.6 + speedFactor * 0.16 + (boost ? 0.18 : 0);
+          ? THREE.MathUtils.clamp(
+              0.58 +
+                speedFactor * 0.18 +
+                Math.abs(climbInput) * 0.3 +
+                Math.max(0, throttleInput) * 0.08 +
+                (boost ? 0.1 : 0) +
+                shimmer,
+              0.45,
+              1.34,
+            )
+          : THREE.MathUtils.clamp(
+              0.16 +
+                Math.max(0, throttleInput) * 0.78 +
+                speedFactor * 0.18 +
+                (boost ? 0.22 : 0) +
+                shimmer,
+              0.12,
+              1.22,
+            );
       thruster.material.emissiveIntensity = response;
-      thruster.light.intensity = response * 1.2;
+      thruster.light.intensity = response * (thruster.kind === 'lift' ? 1.3 : 1.08);
     }
   }
 
@@ -1512,6 +1989,7 @@ export class MoonGame {
 
     this.vehicleUp.copy(up);
     this.vehicleForward.copy(forward);
+    this.applyRoverClearanceLift(deltaSeconds, right, up, forward);
 
     const suspensionBlend = 1 - Math.exp(-deltaSeconds * 16);
     for (const sample of contactSamples) {
@@ -1536,6 +2014,72 @@ export class MoonGame {
     }
 
     this.updateRoverTransform();
+  }
+
+  private applyRoverClearanceLift(
+    deltaSeconds: number,
+    right: THREE.Vector3,
+    up: THREE.Vector3,
+    forward: THREE.Vector3,
+  ): void {
+    if (!this.terrainSystem) {
+      this.roverClearanceLiftMeters = 0;
+      return;
+    }
+
+    let targetLift = 0;
+    for (const probe of ROVER_CLEARANCE_PROBES) {
+      const probeX =
+        this.vehiclePosition.x +
+        right.x * probe.localX +
+        up.x * probe.localY +
+        forward.x * probe.localZ;
+      const probeY =
+        this.vehiclePosition.y +
+        right.y * probe.localX +
+        up.y * probe.localY +
+        forward.y * probe.localZ;
+      const probeZ =
+        this.vehiclePosition.z +
+        right.z * probe.localX +
+        up.z * probe.localY +
+        forward.z * probe.localZ;
+      const terrainHeight = this.sampleRoverClearanceHeight(probeX, probeZ);
+      targetLift = Math.max(
+        targetLift,
+        terrainHeight + ROVER_CLEARANCE.minBodyClearanceMeters - probeY,
+      );
+    }
+
+    targetLift = THREE.MathUtils.clamp(targetLift, 0, ROVER_CLEARANCE.maxLiftMeters);
+    if (targetLift >= this.roverClearanceLiftMeters) {
+      this.roverClearanceLiftMeters = targetLift;
+    } else {
+      this.roverClearanceLiftMeters = THREE.MathUtils.lerp(
+        this.roverClearanceLiftMeters,
+        targetLift,
+        1 - Math.exp(-deltaSeconds * ROVER_CLEARANCE.settleResponse),
+      );
+    }
+
+    this.vehiclePosition.y += this.roverClearanceLiftMeters;
+  }
+
+  private sampleRoverClearanceHeight(x: number, z: number): number {
+    if (!this.terrainSystem) {
+      return 0;
+    }
+
+    let highest = -Infinity;
+    for (const [offsetX, offsetZ] of ROVER_CLEARANCE_SAMPLE_OFFSETS) {
+      const sampleHeight = this.terrainSystem.sampleHeight(
+        x + offsetX * ROVER_CLEARANCE.sampleRadiusMeters,
+        z + offsetZ * ROVER_CLEARANCE.sampleRadiusMeters,
+      );
+      highest = Math.max(highest, sampleHeight);
+    }
+
+    return highest;
   }
 
   private updateCamera(deltaSeconds: number, snap = false): void {

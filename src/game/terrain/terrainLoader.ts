@@ -18,19 +18,37 @@ export async function loadSiteData(): Promise<LoadedSiteData> {
 }
 
 export async function loadColorTexture(url: string): Promise<THREE.Texture> {
-  const loader = new THREE.TextureLoader();
-  const texture = await loader.loadAsync(url);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.anisotropy = 8;
-  return texture;
+  return loadTexture(url, THREE.SRGBColorSpace);
+}
+
+export async function loadLinearTexture(url: string): Promise<THREE.Texture> {
+  return loadTexture(url, THREE.NoColorSpace);
 }
 
 export async function loadRepeatingColorTexture(url: string): Promise<THREE.Texture> {
   const texture = await loadColorTexture(url);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+export async function loadRepeatingLinearTexture(url: string): Promise<THREE.Texture> {
+  const texture = await loadLinearTexture(url);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+async function loadTexture(
+  url: string,
+  colorSpace: THREE.ColorSpace,
+): Promise<THREE.Texture> {
+  const loader = new THREE.TextureLoader();
+  const texture = await loader.loadAsync(url);
+  texture.colorSpace = colorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 8;
   return texture;
 }
 

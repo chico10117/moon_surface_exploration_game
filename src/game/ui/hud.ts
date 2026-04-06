@@ -136,8 +136,8 @@ export class HudController {
         ? [
             ['Thrust', 'W / S'],
             ['Yaw', 'A / D'],
-            ['Climb', 'Space'],
-            ['Descend', 'Q'],
+            ['Climb', 'Q'],
+            ['Descend', 'Space'],
             ['Boost', 'Shift'],
             ['Orbit Camera', 'Mouse drag'],
             ['Zoom', 'Scroll'],
