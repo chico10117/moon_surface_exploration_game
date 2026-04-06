@@ -1,0 +1,354 @@
+{
+  "textureLow": "/data/tycho/relief-low.png",
+  "textureHigh": "/data/tycho/relief-high.png",
+  "levels": [
+    {
+      "id": "boot",
+      "samplesX": 29,
+      "samplesZ": 25
+    },
+    {
+      "id": "detail",
+      "samplesX": 113,
+      "samplesZ": 97
+    }
+  ],
+  "tiles": [
+    {
+      "key": "r0c0",
+      "row": 0,
+      "col": 0,
+      "boundsMeters": {
+        "minX": -77227.07433918731,
+        "maxX": -38613.537169593656,
+        "minZ": -90970.05127244844,
+        "maxZ": -45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0,
+        "u1": 0.25,
+        "v0": 0,
+        "v1": 0.25
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r0c0.bin",
+        "detail": "/data/tycho/detail/r0c0.bin"
+      }
+    },
+    {
+      "key": "r0c1",
+      "row": 0,
+      "col": 1,
+      "boundsMeters": {
+        "minX": -38613.537169593656,
+        "maxX": 0,
+        "minZ": -90970.05127244844,
+        "maxZ": -45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.25,
+        "u1": 0.5,
+        "v0": 0,
+        "v1": 0.25
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r0c1.bin",
+        "detail": "/data/tycho/detail/r0c1.bin"
+      }
+    },
+    {
+      "key": "r0c2",
+      "row": 0,
+      "col": 2,
+      "boundsMeters": {
+        "minX": 0,
+        "maxX": 38613.53716959366,
+        "minZ": -90970.05127244844,
+        "maxZ": -45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.5,
+        "u1": 0.75,
+        "v0": 0,
+        "v1": 0.25
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r0c2.bin",
+        "detail": "/data/tycho/detail/r0c2.bin"
+      }
+    },
+    {
+      "key": "r0c3",
+      "row": 0,
+      "col": 3,
+      "boundsMeters": {
+        "minX": 38613.53716959366,
+        "maxX": 77227.07433918731,
+        "minZ": -90970.05127244844,
+        "maxZ": -45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.75,
+        "u1": 1,
+        "v0": 0,
+        "v1": 0.25
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r0c3.bin",
+        "detail": "/data/tycho/detail/r0c3.bin"
+      }
+    },
+    {
+      "key": "r1c0",
+      "row": 1,
+      "col": 0,
+      "boundsMeters": {
+        "minX": -77227.07433918731,
+        "maxX": -38613.537169593656,
+        "minZ": -45485.02563622422,
+        "maxZ": 0
+      },
+      "uvBounds": {
+        "u0": 0,
+        "u1": 0.25,
+        "v0": 0.25,
+        "v1": 0.5
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r1c0.bin",
+        "detail": "/data/tycho/detail/r1c0.bin"
+      }
+    },
+    {
+      "key": "r1c1",
+      "row": 1,
+      "col": 1,
+      "boundsMeters": {
+        "minX": -38613.537169593656,
+        "maxX": 0,
+        "minZ": -45485.02563622422,
+        "maxZ": 0
+      },
+      "uvBounds": {
+        "u0": 0.25,
+        "u1": 0.5,
+        "v0": 0.25,
+        "v1": 0.5
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r1c1.bin",
+        "detail": "/data/tycho/detail/r1c1.bin"
+      }
+    },
+    {
+      "key": "r1c2",
+      "row": 1,
+      "col": 2,
+      "boundsMeters": {
+        "minX": 0,
+        "maxX": 38613.53716959366,
+        "minZ": -45485.02563622422,
+        "maxZ": 0
+      },
+      "uvBounds": {
+        "u0": 0.5,
+        "u1": 0.75,
+        "v0": 0.25,
+        "v1": 0.5
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r1c2.bin",
+        "detail": "/data/tycho/detail/r1c2.bin"
+      }
+    },
+    {
+      "key": "r1c3",
+      "row": 1,
+      "col": 3,
+      "boundsMeters": {
+        "minX": 38613.53716959366,
+        "maxX": 77227.07433918731,
+        "minZ": -45485.02563622422,
+        "maxZ": 0
+      },
+      "uvBounds": {
+        "u0": 0.75,
+        "u1": 1,
+        "v0": 0.25,
+        "v1": 0.5
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r1c3.bin",
+        "detail": "/data/tycho/detail/r1c3.bin"
+      }
+    },
+    {
+      "key": "r2c0",
+      "row": 2,
+      "col": 0,
+      "boundsMeters": {
+        "minX": -77227.07433918731,
+        "maxX": -38613.537169593656,
+        "minZ": 0,
+        "maxZ": 45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0,
+        "u1": 0.25,
+        "v0": 0.5,
+        "v1": 0.75
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r2c0.bin",
+        "detail": "/data/tycho/detail/r2c0.bin"
+      }
+    },
+    {
+      "key": "r2c1",
+      "row": 2,
+      "col": 1,
+      "boundsMeters": {
+        "minX": -38613.537169593656,
+        "maxX": 0,
+        "minZ": 0,
+        "maxZ": 45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.25,
+        "u1": 0.5,
+        "v0": 0.5,
+        "v1": 0.75
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r2c1.bin",
+        "detail": "/data/tycho/detail/r2c1.bin"
+      }
+    },
+    {
+      "key": "r2c2",
+      "row": 2,
+      "col": 2,
+      "boundsMeters": {
+        "minX": 0,
+        "maxX": 38613.53716959366,
+        "minZ": 0,
+        "maxZ": 45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.5,
+        "u1": 0.75,
+        "v0": 0.5,
+        "v1": 0.75
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r2c2.bin",
+        "detail": "/data/tycho/detail/r2c2.bin"
+      }
+    },
+    {
+      "key": "r2c3",
+      "row": 2,
+      "col": 3,
+      "boundsMeters": {
+        "minX": 38613.53716959366,
+        "maxX": 77227.07433918731,
+        "minZ": 0,
+        "maxZ": 45485.02563622422
+      },
+      "uvBounds": {
+        "u0": 0.75,
+        "u1": 1,
+        "v0": 0.5,
+        "v1": 0.75
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r2c3.bin",
+        "detail": "/data/tycho/detail/r2c3.bin"
+      }
+    },
+    {
+      "key": "r3c0",
+      "row": 3,
+      "col": 0,
+      "boundsMeters": {
+        "minX": -77227.07433918731,
+        "maxX": -38613.537169593656,
+        "minZ": 45485.02563622422,
+        "maxZ": 90970.05127244844
+      },
+      "uvBounds": {
+        "u0": 0,
+        "u1": 0.25,
+        "v0": 0.75,
+        "v1": 1
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r3c0.bin",
+        "detail": "/data/tycho/detail/r3c0.bin"
+      }
+    },
+    {
+      "key": "r3c1",
+      "row": 3,
+      "col": 1,
+      "boundsMeters": {
+        "minX": -38613.537169593656,
+        "maxX": 0,
+        "minZ": 45485.02563622422,
+        "maxZ": 90970.05127244844
+      },
+      "uvBounds": {
+        "u0": 0.25,
+        "u1": 0.5,
+        "v0": 0.75,
+        "v1": 1
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r3c1.bin",
+        "detail": "/data/tycho/detail/r3c1.bin"
+      }
+    },
+    {
+      "key": "r3c2",
+      "row": 3,
+      "col": 2,
+      "boundsMeters": {
+        "minX": 0,
+        "maxX": 38613.53716959366,
+        "minZ": 45485.02563622422,
+        "maxZ": 90970.05127244844
+      },
+      "uvBounds": {
+        "u0": 0.5,
+        "u1": 0.75,
+        "v0": 0.75,
+        "v1": 1
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r3c2.bin",
+        "detail": "/data/tycho/detail/r3c2.bin"
+      }
+    },
+    {
+      "key": "r3c3",
+      "row": 3,
+      "col": 3,
+      "boundsMeters": {
+        "minX": 38613.53716959366,
+        "maxX": 77227.07433918731,
+        "minZ": 45485.02563622422,
+        "maxZ": 90970.05127244844
+      },
+      "uvBounds": {
+        "u0": 0.75,
+        "u1": 1,
+        "v0": 0.75,
+        "v1": 1
+      },
+      "files": {
+        "boot": "/data/tycho/boot/r3c3.bin",
+        "detail": "/data/tycho/detail/r3c3.bin"
+      }
+    }
+  ]
+}

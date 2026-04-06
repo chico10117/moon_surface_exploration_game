@@ -1,0 +1,53 @@
+{
+  "id": "tycho",
+  "title": "Tycho Survey Corridor",
+  "description": "A rover-first geology survey slice on measured lunar terrain centered on Tycho crater.",
+  "boundsDegrees": {
+    "lonMin": -14.86,
+    "lonMax": -7.859999999999999,
+    "latMin": -46.31,
+    "latMax": -40.31
+  },
+  "world": {
+    "widthMeters": 154454.14867837462,
+    "heightMeters": 181940.1025448969,
+    "minHeightMeters": -1345.1568603515625,
+    "maxHeightMeters": 1348.717041015625,
+    "meanHeightMeters": 125.59353161822806,
+    "widthSamples": 449,
+    "heightSamples": 385,
+    "metersPerSampleX": 344.7637247285148,
+    "metersPerSampleZ": 473.80235037733564
+  },
+  "grid": {
+    "cols": 4,
+    "rows": 4
+  },
+  "spawn": {
+    "lon": -13.85,
+    "lat": -41.48,
+    "headingDegrees": 108,
+    "x": -54941.54717273612,
+    "y": -79.16022363281023,
+    "z": -55491.73127619372
+  },
+  "source": {
+    "dataset": "Procedural Tycho fallback",
+    "citation": "Generated locally from a crater morphology model because the remote NASA TIFF host timed out during bake.",
+    "sourceUrl": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_64_uint.tif"
+  },
+  "sunPresets": {
+    "dawn": {
+      "azimuthDegrees": 128,
+      "elevationDegrees": 8
+    },
+    "noon": {
+      "azimuthDegrees": 158,
+      "elevationDegrees": 27
+    },
+    "lowAngle": {
+      "azimuthDegrees": 194,
+      "elevationDegrees": 5
+    }
+  }
+}

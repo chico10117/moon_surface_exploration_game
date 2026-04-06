@@ -1,0 +1,54 @@
+{
+  "title": "Log Three Geology Passes",
+  "briefing": "Drive the survey rover into Tycho, stabilize inside each scan halo, and hold E to log the anomaly. Return to deployment when all three passes are sealed.",
+  "objectives": [
+    {
+      "id": "rim-west",
+      "label": "Western Rim Shear",
+      "note": "Basalt-highland transition on the northwest inner wall.",
+      "lon": -13.38,
+      "lat": -42.35,
+      "radiusMeters": 4200,
+      "scanDurationSeconds": 3.4,
+      "x": -44571.05433290242,
+      "y": 136.22046340332105,
+      "z": -29110.41640718353
+    },
+    {
+      "id": "floor-breach",
+      "label": "Floor Breach",
+      "note": "Interior flat with ejecta overlays and slumped crater floor material.",
+      "lon": -11.56,
+      "lat": -43.28,
+      "radiusMeters": 4200,
+      "scanDurationSeconds": 4.2,
+      "x": -4412.975676525017,
+      "y": -1214.3931601562506,
+      "z": -909.7005127245155
+    },
+    {
+      "id": "east-rim",
+      "label": "Eastern Rim Crest",
+      "note": "Brighter uplifted shoulder on the exit rim.",
+      "lon": -9.42,
+      "lat": -43.02,
+      "radiusMeters": 4200,
+      "scanDurationSeconds": 3.8,
+      "x": 42805.86406229238,
+      "y": 801.7701720703093,
+      "z": -8793.77162300332
+    }
+  ],
+  "returnZone": {
+    "id": "return-zone",
+    "label": "Deployment Zone",
+    "note": "Return marker at the northwest staging ridge.",
+    "lon": -13.85,
+    "lat": -41.48,
+    "radiusMeters": 5000,
+    "scanDurationSeconds": 0,
+    "x": -54941.54717273612,
+    "y": -79.16022363281023,
+    "z": -55491.73127619372
+  }
+}
