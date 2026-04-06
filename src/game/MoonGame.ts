@@ -137,6 +137,22 @@ const DRONE_TUNING = {
   orbitPitchRadians: 0.56,
 };
 
+const CAMERA_ZOOM_CONFIG: Record<
+  VehicleMode,
+  { minScale: number; maxScale: number; wheelSensitivity: number }
+> = {
+  rover: {
+    minScale: 0.58,
+    maxScale: 2.7,
+    wheelSensitivity: 0.00115,
+  },
+  drone: {
+    minScale: 0.45,
+    maxScale: 2.35,
+    wheelSensitivity: 0.001,
+  },
+};
+
 export class MoonGame {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -185,6 +201,10 @@ export class MoonGame {
   private steerVisualRadians = 0;
   private dronePitchRadians = 0;
   private droneRollRadians = 0;
+  private readonly cameraZoomScaleByMode: Record<VehicleMode, number> = {
+    rover: 1,
+    drone: 1,
+  };
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -329,6 +349,23 @@ export class MoonGame {
     canvas.addEventListener('contextmenu', (event) => {
       event.preventDefault();
     });
+    canvas.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+
+        const config = CAMERA_ZOOM_CONFIG[this.vehicleMode];
+        const nextZoom =
+          this.cameraZoomScaleByMode[this.vehicleMode] *
+          Math.exp(event.deltaY * config.wheelSensitivity);
+        this.cameraZoomScaleByMode[this.vehicleMode] = THREE.MathUtils.clamp(
+          nextZoom,
+          config.minScale,
+          config.maxScale,
+        );
+      },
+      { passive: false },
+    );
   }
 
   private setupVehicleSelector(): void {
@@ -1503,12 +1540,13 @@ export class MoonGame {
 
   private updateCamera(deltaSeconds: number, snap = false): void {
     const isDrone = this.vehicleMode === 'drone';
+    const zoomScale = this.cameraZoomScaleByMode[this.vehicleMode];
     const speedFactor = Math.min(
       1,
       Math.abs(this.speedMps) / (isDrone ? DRONE_TUNING.boostSpeedMps : ROVER_TUNING.boostSpeedMps),
     );
     const chaseDistance =
-      (isDrone ? DRONE_DIMENSIONS.cameraDistance : ROVER_DIMENSIONS.cameraDistance) +
+      (isDrone ? DRONE_DIMENSIONS.cameraDistance : ROVER_DIMENSIONS.cameraDistance) * zoomScale +
       (isDrone ? DRONE_TUNING.cameraSpeedPullback : ROVER_TUNING.cameraSpeedPullback) *
         Math.pow(speedFactor, 0.85);
     const lookAhead =

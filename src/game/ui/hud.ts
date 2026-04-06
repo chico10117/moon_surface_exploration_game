@@ -140,12 +140,14 @@ export class HudController {
             ['Descend', 'Q'],
             ['Boost', 'Shift'],
             ['Orbit Camera', 'Mouse drag'],
+            ['Zoom', 'Scroll'],
             ['Reset', 'R'],
           ]
         : [
             ['Drive', 'W / S'],
             ['Steer', 'A / D'],
             ['Orbit Camera', 'Mouse drag'],
+            ['Zoom', 'Scroll'],
             ['Boost', 'Shift'],
             ['Brake', 'Space'],
             ['Scan', 'E'],
