@@ -186,14 +186,14 @@ const siteManifest = {
 };
 
 const terrainManifest = {
-  albedoLow: '/data/tycho/albedo-low.png',
-  albedoHigh: '/data/tycho/albedo-high.png',
-  macroNormalLow: '/data/tycho/macro-normal-low.png',
-  macroNormalHigh: '/data/tycho/macro-normal-high.png',
-  macroOcclusionLow: '/data/tycho/macro-occlusion-low.png',
-  macroOcclusionHigh: '/data/tycho/macro-occlusion-high.png',
-  detailAlbedo: '/data/tycho/detail-albedo.png',
-  detailNormal: '/data/tycho/detail-normal.png',
+  albedoLow: 'data/tycho/albedo-low.png',
+  albedoHigh: 'data/tycho/albedo-high.png',
+  macroNormalLow: 'data/tycho/macro-normal-low.png',
+  macroNormalHigh: 'data/tycho/macro-normal-high.png',
+  macroOcclusionLow: 'data/tycho/macro-occlusion-low.png',
+  macroOcclusionHigh: 'data/tycho/macro-occlusion-high.png',
+  detailAlbedo: 'data/tycho/detail-albedo.png',
+  detailNormal: 'data/tycho/detail-normal.png',
   materialTuning: {
     macroNormalStrength: 0.58,
     occlusionStrength: 0.12,
@@ -915,8 +915,8 @@ function buildTileManifest() {
           v1: (row + 1) / SITE.grid.rows,
         },
         files: {
-          boot: `/data/tycho/boot/${key}.bin`,
-          detail: `/data/tycho/detail/${key}.bin`,
+          boot: `data/tycho/boot/${key}.bin`,
+          detail: `data/tycho/detail/${key}.bin`,
         },
       });
     }
