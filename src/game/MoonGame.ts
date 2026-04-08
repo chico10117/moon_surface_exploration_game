@@ -3,6 +3,7 @@ import type { GameBindings } from './ui/hud';
 import { HudController } from './ui/hud';
 import { InputController } from './systems/input';
 import { MissionController } from './systems/mission';
+import { SkySystem } from './render/SkySystem';
 import { loadSiteData } from './terrain/terrainLoader';
 import { TerrainSystem } from './terrain/terrainSystem';
 import type { LoadedSiteData, VehicleMode, VehicleTelemetry } from './types';
@@ -181,6 +182,11 @@ const CAMERA_ZOOM_CONFIG: Record<
   },
 };
 
+const CAMERA_ORBIT_PITCH_LIMITS = {
+  minRadians: -THREE.MathUtils.degToRad(89),
+  maxRadians: THREE.MathUtils.degToRad(89),
+};
+
 const ROVER_CLEARANCE = {
   minBodyClearanceMeters: 0.22,
   maxLiftMeters: 1.25,
@@ -253,10 +259,12 @@ export class MoonGame {
   private readonly roverLights: RoverLightState[] = [];
   private readonly droneThrusters: DroneThrusterState[] = [];
   private readonly sensorRig = new THREE.Group();
+  private readonly skySunDirection = new THREE.Vector3();
 
   private siteData: LoadedSiteData | null = null;
   private terrainSystem: TerrainSystem | null = null;
   private missionController: MissionController | null = null;
+  private skySystem: SkySystem | null = null;
 
   private vehicleMode: VehicleMode = 'rover';
   private runPhase: 'loading' | 'selecting' | 'active' = 'loading';
@@ -315,6 +323,16 @@ export class MoonGame {
     const siteData = await loadSiteData();
     this.siteData = siteData;
 
+    const skyLatitude =
+      siteData.site.spawn.lat ?? (siteData.site.boundsDegrees.latMin + siteData.site.boundsDegrees.latMax) / 2;
+    const skyLongitude =
+      siteData.site.spawn.lon ?? (siteData.site.boundsDegrees.lonMin + siteData.site.boundsDegrees.lonMax) / 2;
+    this.skySystem = new SkySystem(this.scene, {
+      latitudeDegrees: skyLatitude,
+      longitudeDegrees: skyLongitude,
+    });
+    this.cameraOrbitYawRadians = this.skySystem.getInitialViewYawRadians();
+
     const terrainSystem = new TerrainSystem(this.scene, siteData.site, siteData.terrain);
     await terrainSystem.initialize();
     await terrainSystem.warmStart(
@@ -359,24 +377,6 @@ export class MoonGame {
     this.sunLight.shadow.normalBias = 0.45;
     this.scene.add(this.sunLight);
 
-    const starGeometry = new THREE.BufferGeometry();
-    const starCount = 900;
-    const starPositions = new Float32Array(starCount * 3);
-    for (let index = 0; index < starCount; index += 1) {
-      const radius = 170000 + Math.random() * 90000;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.random() * Math.PI;
-      starPositions[index * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      starPositions[index * 3 + 1] = radius * Math.cos(phi);
-      starPositions[index * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-    }
-    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-
-    const stars = new THREE.Points(
-      starGeometry,
-      new THREE.PointsMaterial({ color: '#dfe9ff', size: 110, sizeAttenuation: true }),
-    );
-    this.scene.add(stars);
   }
 
   private applySunPreset(presetName: string): void {
@@ -406,6 +406,8 @@ export class MoonGame {
       Math.sin(elevationRadians) * lightRadius,
       Math.sin(azimuthRadians) * horizontalRadius,
     );
+    this.skySunDirection.copy(this.sunLight.position).normalize();
+    this.skySystem?.setSunDirection(this.skySunDirection);
   }
 
   private setupCameraControls(canvas: HTMLCanvasElement): void {
@@ -433,11 +435,11 @@ export class MoonGame {
       this.lastPointerX = event.clientX;
       this.lastPointerY = event.clientY;
 
-      this.cameraOrbitYawRadians += deltaX * 0.0055;
+      this.cameraOrbitYawRadians -= deltaX * 0.0055;
       this.cameraOrbitPitchRadians = THREE.MathUtils.clamp(
         this.cameraOrbitPitchRadians + deltaY * 0.0032,
-        0.14,
-        1.18,
+        CAMERA_ORBIT_PITCH_LIMITS.minRadians,
+        CAMERA_ORBIT_PITCH_LIMITS.maxRadians,
       );
     });
 
@@ -1527,6 +1529,7 @@ export class MoonGame {
     }
 
     this.updateCamera(1, true);
+    this.skySystem?.update(this.camera.position, this.camera.quaternion);
   }
 
   private rebuildMarkers(): void {
@@ -1649,6 +1652,7 @@ export class MoonGame {
     }
 
     this.updateCamera(deltaSeconds);
+    this.skySystem?.update(this.camera.position, this.camera.quaternion);
     this.animateMarkers(deltaSeconds);
 
     const telemetry: VehicleTelemetry = {

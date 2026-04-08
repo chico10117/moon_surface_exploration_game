@@ -37,6 +37,8 @@ export interface SiteManifest {
     y: number;
     z: number;
     headingDegrees: number;
+    lon?: number;
+    lat?: number;
   };
   source: {
     topography: RasterSourceManifest;
